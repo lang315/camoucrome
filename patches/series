@@ -64,3 +64,4 @@ input-grid-edge.patch
 sp2f-input-coalesce.patch
 sp2g-pump-spacing.patch
 b1-linux-claim-interfaces.patch
+canvas-mask-merge.patch

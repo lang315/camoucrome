@@ -1,0 +1,90 @@
+diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
+index e565777280..7d3c232780 100644
+--- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
++++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
+@@ -626,6 +626,8 @@ CanvasRenderingContext::CamouMakeFrameNoise() {
+     TRACE_EVENT_INSTANT2("blink", "CamouParked", TRACE_EVENT_SCOPE_THREAD,
+                          "parked", static_cast<int>(counters.parked_total),
+                          "evicted", static_cast<int>(counters.parked_evicted));
++    TRACE_EVENT_INSTANT1("blink", "CamouMerged", TRACE_EVENT_SCOPE_THREAD,
++                         "merged", static_cast<int>(counters.merged_total));
+   }
+   auto noise = base::MakeRefCounted<CamouFrameNoise>();
+   noise->domain = CamouNoiseDomain();
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
+index 77a4ee210e..e4fa9041a4 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
+@@ -888,6 +888,27 @@ void Canvas2DRecorderContext::CamouMarkRect(
+                           kind);
+           },
+           area, kind));
++  CamouTraceQueue();
++}
++
++void Canvas2DRecorderContext::CamouOverdrawn() {
++  // Camoucrome overdraw elision (R3-v2): nothing queued without canvas:seed.
++  const size_t jobs =
++      camou_mask_.pending_events() + camou_mask_.parked_events();
++  if (jobs == 0) {
++    return;
++  }
++  TRACE_EVENT_INSTANT1("blink", "CamouElided", TRACE_EVENT_SCOPE_THREAD,
++                       "jobs", static_cast<int>(jobs));
++  camou_mask_.Reset();
++}
++
++void Canvas2DRecorderContext::CamouTraceQueue() const {
++  // The args are evaluated only while the category is traced.
++  TRACE_EVENT_INSTANT("blink", "CamouMaskQueue", "dropped",
++                      camou_mask_.counters().dropped_total, "evicted",
++                      camou_mask_.counters().parked_evicted, "pending_kb",
++                      camou_mask_.pending_bytes() >> 10);
+ }
+ 
+ namespace {
+@@ -1281,6 +1302,7 @@ void Canvas2DRecorderContext::CamouMarkRecord(cc::PaintRecord record,
+                     std::make_unique<CamouWalk>(std::move(record), cpu, w, h),
+                     holds_images);
+   }
++  CamouTraceQueue();
+   if (!holds_images) {
+     CamouScheduleIdleWalk();
+   }
+@@ -1304,6 +1326,8 @@ void Canvas2DRecorderContext::CamouScheduleIdleWalk() {
+ // usually nothing left to walk and the task never outlasts its deadline by
+ // more than one op.
+ void Canvas2DRecorderContext::CamouIdleWalk(base::TimeTicks deadline) {
++  TRACE_EVENT1("blink", "CamouIdleWalk", "budget_us",
++               (deadline - base::TimeTicks::Now()).InMicroseconds());
+   camou_idle_walk_posted_ = false;
+   while (base::TimeTicks::Now() < deadline &&
+          camou_mask_.ApplyOldest(deadline)) {
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
+index 708b929cec..646367b6d4 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
+@@ -438,6 +438,13 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+   // images is walked at once, so the queue never pins an image.
+   void CamouMarkRecord(cc::PaintRecord record, bool cpu, size_t bytes);
+   void CamouScheduleIdleWalk();
++  // A clearRect covering every pixel was recorded (CheckOverdraw): every
++  // queued mask job is dead (the clear sets each cell to nothing), so the
++  // queue is dropped exactly.
++  void CamouOverdrawn();
++  // A trace of the queue after a push: what it released or evicted so far and
++  // what it holds.
++  void CamouTraceQueue() const;
+   void CamouIdleWalk(base::TimeTicks deadline);
+   // One flushed recording's walk, a queued job of camou_mask_.
+   class CamouWalk;
+@@ -833,6 +840,9 @@ ALWAYS_INLINE void Canvas2DRecorderContext::CheckOverdraw(
+   }
+ 
+   Recorder()->RestartCurrentLayer();
++  if (overdraw_op == OverdrawOp::kClearRect) {  // static branch
++    CamouOverdrawn();
++  }
+ }
+ 
+ template <Canvas2DRecorderContext::OverdrawOp CurrentOverdrawOp,

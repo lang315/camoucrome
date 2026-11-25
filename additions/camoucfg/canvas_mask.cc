@@ -5,6 +5,8 @@
 #include "components/camoucfg/canvas_mask.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <utility>
 
@@ -85,7 +87,83 @@ void CanvasNoiseMask::Apply(const uint8_t* coverage, size_t coverage_stride,
                              static_cast<size_t>(x - left)];
   };
   bool changed = false;
-  if ((kind == Kind::kSolidOpaque || kind == Kind::kClear) && !cells_.empty()) {
+  const bool clear_kind = kind == Kind::kSolidOpaque || kind == Kind::kClear;
+  const bool solid_kind = clear_kind || kind == Kind::kSolid;
+  const uint8_t fixed_bit =
+      kind == Kind::kImported ? kNoiseMaskImported : kNoiseMaskAa;
+  if (shift_ == 0 && !cov.empty()) {
+    // One cell per pixel: the clear (a fully covered pixel, clear kinds) and the
+    // mark (aa on a partly covered pixel for the solid kinds, the kind's bit on
+    // any covered pixel otherwise) never meet in one cell, so one pass in any
+    // order is the two passes below. Raw rows: this is the walk's inner loop.
+    for (int64_t y = y0; y < y1; ++y) {
+      const uint8_t* const c = UNSAFE_BUFFERS(
+          cov.data() + static_cast<size_t>(y - top) * coverage_stride +
+          static_cast<size_t>(x0 - left));
+      bool row_changed = false;
+      const int64_t n = x1 - x0;
+      for (int64_t i = 0; i < n; ++i) {
+        // Most of a shape's bounds is uncovered: skip zeros a word at a time.
+        if (i + 8 <= n) {
+          uint64_t word;
+          UNSAFE_BUFFERS(std::memcpy(&word, c + i, sizeof(word)));
+          if (word == 0) {
+            i += 7;
+            continue;
+          }
+        }
+        const uint8_t v = UNSAFE_BUFFERS(c[i]);
+        if (v == 0) {
+          continue;
+        }
+        uint8_t bit = fixed_bit;
+        if (solid_kind) {
+          if (v == 255) {
+            if (clear_kind && !cells_.empty()) {
+              uint8_t& cell = UNSAFE_BUFFERS(
+                  cells_.data()[static_cast<size_t>(y) * stride_ +
+                                static_cast<size_t>(x0 + i)]);
+              if (cell != 0) {
+                if (cell == kNoiseMaskAa) {
+                  --aa_cells_;
+                }
+                cell = 0;
+                row_changed = true;
+              }
+            }
+            continue;
+          }
+          bit = kNoiseMaskAa;
+        }
+        if (cells_.empty()) {
+          cells_.assign(stride_ * rows_, 0);
+          MarkAllDirty();
+        }
+        uint8_t& cell = UNSAFE_BUFFERS(
+            cells_.data()[static_cast<size_t>(y) * stride_ +
+                          static_cast<size_t>(x0 + i)]);
+        if ((cell & bit) != bit) {
+          if (cell == kNoiseMaskAa) {
+            --aa_cells_;
+          }
+          cell |= bit;
+          if (cell == kNoiseMaskAa) {
+            ++aa_cells_;
+          }
+          row_changed = true;
+        }
+      }
+      if (row_changed) {
+        MarkDirty(static_cast<size_t>(y));
+        changed = true;
+      }
+    }
+    if (changed) {
+      ++generation_;
+    }
+    return;
+  }
+  if (clear_kind && !cells_.empty()) {
     // Clear each cell whose every canvas pixel is fully covered.
     const int64_t s = int64_t{1} << shift_;
     for (int64_t cy = y0 >> shift_; cy <= (y1 - 1) >> shift_; ++cy) {
@@ -120,16 +198,12 @@ void CanvasNoiseMask::Apply(const uint8_t* coverage, size_t coverage_stride,
   // The mark of a pixel: fixed for the aa and imported kinds, and for the
   // solid kinds aa on a partly covered pixel only. A solid kind without a
   // coverage buffer covers every pixel fully: nothing to mark.
-  const bool solid_kind = kind == Kind::kSolidOpaque || kind == Kind::kSolid ||
-                          kind == Kind::kClear;
   if (solid_kind && cov.empty()) {
     if (changed) {
       ++generation_;
     }
     return;
   }
-  const uint8_t fixed_bit =
-      kind == Kind::kImported ? kNoiseMaskImported : kNoiseMaskAa;
   for (int64_t y = y0; y < y1; ++y) {
     base::span<const uint8_t> row;  // this row's coverage from x0 on
     if (!cov.empty()) {
@@ -244,6 +318,10 @@ std::unique_ptr<LazyCanvasNoiseMask::Job> LazyCanvasNoiseMask::Job::Clone() cons
   return nullptr;
 }
 
+bool LazyCanvasNoiseMask::Job::IsEvent() const {
+  return false;
+}
+
 namespace {
 
 // An Event as a job: one slice that always finishes.
@@ -254,9 +332,85 @@ class EventJob final : public LazyCanvasNoiseMask::Job {
     std::move(event_).Run(mask);
     return true;
   }
+  bool IsEvent() const override { return true; }
 
  private:
   LazyCanvasNoiseMask::Event event_;
+};
+
+// Jobs merged into one, walked in order. Each part keeps its own bytes, so the
+// queue can walk one part and free its bytes. Applying a whole job is
+// idempotent (every cell goes through x -> (x & m) | b), so a frame that
+// carries a merge whose older parts a memo already holds is still right.
+class MergedJob final : public LazyCanvasNoiseMask::Job {
+ public:
+  void Append(std::unique_ptr<LazyCanvasNoiseMask::Job> job, size_t bytes) {
+    parts_.push_back({std::move(job), bytes});
+  }
+  // Takes the parts `other` has not walked, after this one's.
+  void Absorb(MergedJob& other) {
+    unreported_ += other.unreported_;
+    for (size_t i = other.index_; i < other.parts_.size(); ++i) {
+      parts_.push_back(std::move(other.parts_[i]));
+    }
+    other.parts_.clear();
+    other.index_ = 0;
+    other.unreported_ = 0;
+  }
+  bool Step(CanvasNoiseMask& mask, base::TimeTicks deadline) override {
+    while (index_ < parts_.size()) {
+      Part& part = parts_[index_];
+      if (!part.job->Step(mask, deadline)) {
+        return false;
+      }
+      Finish(part);
+    }
+    return true;
+  }
+  bool FrontIsEvent() const { return parts_[index_].job->IsEvent(); }
+  // Works the part in progress to its end on `mask` (null: releases it
+  // unwalked); returns the bytes the finished parts free, and sets `*done`
+  // when nothing is left.
+  size_t FinishPart(CanvasNoiseMask* mask, bool* done) {
+    Part& part = parts_[index_];
+    if (mask) {
+      part.job->Step(*mask, base::TimeTicks::Max());
+    }
+    Finish(part);
+    *done = index_ >= parts_.size();
+    const size_t freed = unreported_;
+    unreported_ = 0;
+    return freed;
+  }
+  // O(parts): every part not walked yet, each where it stands; null when one
+  // cannot be copied (an Event).
+  std::unique_ptr<LazyCanvasNoiseMask::Job> Clone() const override {
+    auto copy = std::make_unique<MergedJob>();
+    for (size_t i = index_; i < parts_.size(); ++i) {
+      std::unique_ptr<LazyCanvasNoiseMask::Job> part = parts_[i].job->Clone();
+      if (!part) {
+        return nullptr;
+      }
+      copy->Append(std::move(part), parts_[i].bytes);
+    }
+    return copy;
+  }
+
+ private:
+  struct Part {
+    std::unique_ptr<LazyCanvasNoiseMask::Job> job;
+    size_t bytes;
+  };
+  // A part is done: its recording is released, its bytes wait to be reported.
+  void Finish(Part& part) {
+    unreported_ += part.bytes;
+    part.job.reset();
+    ++index_;
+  }
+
+  std::vector<Part> parts_;
+  size_t index_ = 0;       // the part in progress
+  size_t unreported_ = 0;  // bytes of finished parts the queue still counts
 };
 
 }  // namespace
@@ -270,25 +424,97 @@ void LazyCanvasNoiseMask::Add(size_t width, size_t height, size_t bytes,
 void LazyCanvasNoiseMask::Add(size_t width, size_t height, size_t bytes,
                               std::unique_ptr<Job> job, bool apply_now) {
   ++revision_;
+  bytes = std::max(bytes, kMinPartBytes);
   pending_.push_back({width, height, bytes, next_id_++, std::move(job)});
   pending_bytes_ += bytes;
   if (apply_now) {
     Materialize();
     return;
   }
-  while (pending_.size() > kMaxPendingEvents ||
-         (pending_bytes_ > kMaxPendingBytes && pending_.size() > 1)) {
-    ShedFront();
+  while (pending_.size() > kMaxPendingEvents) {
+    if (!MergeOldestPair()) {
+      ShedFront();
+    }
+  }
+  // The newest job past the cap stays queued, unwalked, as before.
+  while (pending_bytes_ > kMaxPendingBytes && pending_.size() > 1) {
+    DropFront();
   }
 }
 
-void LazyCanvasNoiseMask::ShedFront() const {
-  if (pending_.front().id > last_deferred_id_) {
-    // No frame carries it: nobody can have seen it.
-    pending_bytes_ -= pending_.front().bytes;
-    pending_.erase(pending_.begin());
+void LazyCanvasNoiseMask::DropFront() const {
+  Pending& p = pending_.front();
+  if (p.id <= last_deferred_id_) {
+    ParkFront();
     return;
   }
+  auto* merged = p.merged ? static_cast<MergedJob*>(p.job.get()) : nullptr;
+  const bool event = merged ? merged->FrontIsEvent() : p.job->IsEvent();
+  if (event) {
+    // An event is walked, never dropped: it costs no recording. The parked
+    // jobs are older, so they go first.
+    while (!parked_.empty()) {
+      StepFront(base::TimeTicks::Max());
+    }
+    if (!merged) {
+      StepFront(base::TimeTicks::Max());
+      return;
+    }
+    touched_id_ = p.id;
+  } else {
+    ++counters_.dropped_total;
+  }
+  ++revision_;
+  bool done = true;
+  size_t freed =
+      merged ? merged->FinishPart(event ? &MaskFor(p) : nullptr, &done)
+             : p.bytes;
+  freed = done ? p.bytes : std::min(freed, p.bytes);
+  p.bytes -= freed;
+  pending_bytes_ -= freed;
+  if (done) {
+    pending_.erase(pending_.begin());
+  }
+}
+
+bool LazyCanvasNoiseMask::MergeOldestPair() const {
+  for (size_t i = 0; i + 1 < pending_.size(); ++i) {
+    Pending& a = pending_[i];
+    Pending& b = pending_[i + 1];
+    if (a.width != b.width || a.height != b.height ||
+        (a.id > last_deferred_id_) != (b.id > last_deferred_id_)) {
+      continue;
+    }
+    if (!a.merged) {
+      auto merged = std::make_unique<MergedJob>();
+      merged->Append(std::move(a.job), a.bytes);
+      a.job = std::move(merged);
+      a.merged = true;
+    }
+    auto* into = static_cast<MergedJob*>(a.job.get());
+    if (b.merged) {
+      into->Absorb(*static_cast<MergedJob*>(b.job.get()));
+    } else {
+      into->Append(std::move(b.job), b.bytes);
+    }
+    a.bytes += b.bytes;
+    a.id = b.id;
+    ++counters_.merged_total;
+    pending_.erase(pending_.begin() + static_cast<ptrdiff_t>(i) + 1);
+    return true;
+  }
+  return false;
+}
+
+void LazyCanvasNoiseMask::ShedFront() const {
+  // The parked jobs are older: walked first.
+  while (!parked_.empty()) {
+    StepFront(base::TimeTicks::Max());
+  }
+  StepFront(base::TimeTicks::Max());
+}
+
+void LazyCanvasNoiseMask::ParkFront() const {
   // The last deferred frame carries it, and the page may read that frame (and
   // tell us) after this point; if it has, EvictParkedFront() walks it.
   Pending parked = std::move(pending_.front());
@@ -329,16 +555,21 @@ bool LazyCanvasNoiseMask::ApplyOldest(base::TimeTicks deadline) {
   return true;
 }
 
-void LazyCanvasNoiseMask::StepFront(base::TimeTicks deadline) const {
-  ++revision_;
-  const bool parked = !parked_.empty();
-  Pending& p = parked ? parked_.front() : pending_.front();
+CanvasNoiseMask& LazyCanvasNoiseMask::MaskFor(const Pending& p) const {
   if (!mask_ || mask_->width() != p.width || mask_->height() != p.height) {
     Retire();
     mask_ = std::make_unique<CanvasNoiseMask>(p.width, p.height);
   }
+  return *mask_;
+}
+
+void LazyCanvasNoiseMask::StepFront(base::TimeTicks deadline) const {
+  ++revision_;
+  const bool parked = !parked_.empty();
+  Pending& p = parked ? parked_.front() : pending_.front();
+  CanvasNoiseMask& mask = MaskFor(p);
   touched_id_ = p.id;
-  if (p.job->Step(*mask_, deadline)) {
+  if (p.job->Step(mask, deadline)) {
     if (parked) {
       parked_bytes_ -= p.bytes;
       parked_.erase(parked_.begin());

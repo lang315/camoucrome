@@ -41,6 +41,74 @@ std::vector<uint8_t> Coverage(size_t w, size_t h, uint8_t edge) {
   return c;
 }
 
+// Merge() against the per-pixel rule, written out here: 255 clears for the
+// clear kinds and keeps for kSolid, a partial value sets aa for the solid
+// kinds, any value sets the kind's bit for kAa and kImported. Random rects
+// (some past the canvas) and values, every kind, the aa count checked too.
+TEST(CanvasNoiseMaskTest, MergeFollowsThePerPixelRule) {
+  constexpr size_t kW = 61, kH = 47;
+  CanvasNoiseMask m(kW, kH);
+  m.MarkRect(0, 0, kW, kH, Kind::kAa);
+  std::vector<uint8_t> ref(kW * kH, kNoiseMaskAa);
+  uint64_t s = 12345;
+  auto next = [&s](uint64_t n) {
+    s ^= s << 13;
+    s ^= s >> 7;
+    s ^= s << 17;
+    return s % n;
+  };
+  const Kind kinds[] = {Kind::kSolidOpaque, Kind::kSolid, Kind::kClear,
+                        Kind::kAa, Kind::kImported};
+  for (int op = 0; op < 400; ++op) {
+    const Kind kind = kinds[next(5)];
+    const int64_t left = static_cast<int64_t>(next(kW + 10)) - 5;
+    const int64_t top = static_cast<int64_t>(next(kH + 10)) - 5;
+    const size_t w = 1 + next(30), h = 1 + next(30);
+    std::vector<uint8_t> cov(w * h);
+    // Every other op is sparse (mostly zero runs, as a shape's bounds are).
+    const uint64_t zero_odds = op % 2 ? 12 : 1;
+    for (uint8_t& v : cov) {
+      const uint64_t r = next(3 + zero_odds);
+      v = r >= 2 ? 0 : r == 1 ? 255 : static_cast<uint8_t>(1 + next(254));
+    }
+    m.Merge(cov.data(), w, left, top, w, h, kind);
+    for (size_t y = 0; y < h; ++y) {
+      for (size_t x = 0; x < w; ++x) {
+        const int64_t px = left + static_cast<int64_t>(x);
+        const int64_t py = top + static_cast<int64_t>(y);
+        if (px < 0 || py < 0 || px >= static_cast<int64_t>(kW) ||
+            py >= static_cast<int64_t>(kH)) {
+          continue;
+        }
+        uint8_t& cell =
+            ref[static_cast<size_t>(py) * kW + static_cast<size_t>(px)];
+        const uint8_t v = cov[y * w + x];
+        if (v == 0) {
+          continue;
+        }
+        if (kind == Kind::kAa) {
+          cell |= kNoiseMaskAa;
+        } else if (kind == Kind::kImported) {
+          cell |= kNoiseMaskImported;
+        } else if (v < 255) {
+          cell |= kNoiseMaskAa;
+        } else if (kind != Kind::kSolid) {
+          cell = 0;
+        }
+      }
+    }
+    bool any_aa = false;
+    for (size_t y = 0; y < kH; ++y) {
+      for (size_t x = 0; x < kW; ++x) {
+        ASSERT_EQ(Cell(m, x, y), ref[y * kW + x])
+            << "op " << op << " at " << x << "," << y;
+        any_aa |= ref[y * kW + x] == kNoiseMaskAa;
+      }
+    }
+    ASSERT_EQ(m.has_aa(), any_aa) << "op " << op;
+  }
+}
+
 TEST(CanvasNoiseMaskTest, StartsEmptyAndFullOpaqueCoverMarksNothing) {
   CanvasNoiseMask m(16, 16);
   EXPECT_TRUE(m.empty());
@@ -457,7 +525,7 @@ TEST(LazyCanvasNoiseMaskTest, GenerationNeverRepeatsAcrossResizeAndReset) {
   }
 }
 
-TEST(LazyCanvasNoiseMaskTest, PastTheCapsTheOldestEventIsDroppedUnwalkedPerAdd) {
+TEST(LazyCanvasNoiseMaskTest, PastTheCountCapTheOldestJobsAreMergedNeverDropped) {
   std::vector<int> order;
   auto note = [&](int id) {
     return base::BindOnce([](std::vector<int>* order, int id, CanvasNoiseMask&) { order->push_back(id); }, &order, id);
@@ -467,14 +535,16 @@ TEST(LazyCanvasNoiseMaskTest, PastTheCapsTheOldestEventIsDroppedUnwalkedPerAdd) 
     lazy.Add(8, 8, 1, note(static_cast<int>(i)));
   }
   EXPECT_EQ(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents);
-  lazy.Add(8, 8, 1, note(100));  // over the cap: the oldest goes, never walked
+  lazy.Add(8, 8, 1, note(100));  // over the cap: the two oldest are merged, nothing is walked
   lazy.Add(8, 8, 1, note(101));
   EXPECT_TRUE(order.empty());
   EXPECT_EQ(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents);
-  // A read walks the rest, in order: events 0 and 1 are gone.
+  EXPECT_EQ(lazy.counters().merged_total, 2u);  // the trace's CamouMerged
+  EXPECT_EQ(lazy.counters().parked_total, 0u);
+  // A read walks every event, in order.
   EXPECT_FALSE(lazy.has_aa());
-  EXPECT_EQ(order.size(), LazyCanvasNoiseMask::kMaxPendingEvents);
-  EXPECT_EQ(order.front(), 2);
+  ASSERT_EQ(order.size(), LazyCanvasNoiseMask::kMaxPendingEvents + 2);
+  EXPECT_EQ(order.front(), 0);
   EXPECT_EQ(order.back(), 101);
   for (size_t i = 1; i < order.size(); ++i) {
     EXPECT_LT(order[i - 1], order[i]);
@@ -482,7 +552,7 @@ TEST(LazyCanvasNoiseMaskTest, PastTheCapsTheOldestEventIsDroppedUnwalkedPerAdd) 
   EXPECT_EQ(lazy.pending_events(), 0u);
 }
 
-TEST(LazyCanvasNoiseMaskTest, TheMaskAfterADropEqualsTheEagerMaskOfTheRetainedEvents) {
+TEST(LazyCanvasNoiseMaskTest, TheMaskPastTheCountCapEqualsTheEagerMaskOfEveryEvent) {
   // Marks of distinct 4 x 4 blocks on a 100 x 8 canvas, more events than the cap holds.
   const size_t n = LazyCanvasNoiseMask::kMaxPendingEvents + 5;
   std::vector<ScriptStep> steps;
@@ -493,62 +563,39 @@ TEST(LazyCanvasNoiseMaskTest, TheMaskAfterADropEqualsTheEagerMaskOfTheRetainedEv
   for (const ScriptStep& s : steps) {
     lazy.Add(s.w, s.h, 1, Ev(s));
   }
-  const std::vector<ScriptStep> kept(steps.begin() + 5, steps.end());   // the oldest five were dropped
+  EXPECT_EQ(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents);
   uint64_t aa = 0;
-  EXPECT_EQ(Cells(lazy.view()), EagerCells(kept, kept.size(), -1, &aa));
+  EXPECT_EQ(Cells(lazy.view()), EagerCells(steps, steps.size(), -1, &aa));  // the oldest five are merged, not dropped
   EXPECT_TRUE(lazy.has_aa());
 }
 
-TEST(LazyCanvasNoiseMaskTest, TheByteCapDropsOldestEventsUntilUnderIt) {
+TEST(LazyCanvasNoiseMaskTest, TheByteCapWalksTheOldestEventUntilUnderIt) {
   int ran = 0;
   auto count = [&] { return base::BindOnce([](int* ran, CanvasNoiseMask&) { ++*ran; }, &ran); };
   LazyCanvasNoiseMask lazy;
   lazy.Add(8, 8, LazyCanvasNoiseMask::kMaxPendingBytes - 1, count());
-  lazy.Add(8, 8, 2, count());  // over the cap with two events: the oldest is dropped
   EXPECT_EQ(ran, 0);
-  EXPECT_EQ(lazy.pending_events(), 1u);
-  EXPECT_EQ(lazy.pending_bytes(), 2u);
-  lazy.view();
+  lazy.Add(8, 8, 2, count());  // over the cap with two events: the oldest is walked (an event is never dropped)
   EXPECT_EQ(ran, 1);
+  EXPECT_EQ(lazy.pending_events(), 1u);
+  EXPECT_EQ(lazy.pending_bytes(), LazyCanvasNoiseMask::kMinPartBytes);  // a small job is accounted at least this much
+  lazy.view();
+  EXPECT_EQ(ran, 2);
 }
 
-// A dropped opaque fill or clearRect leaves the aa marks of earlier events in
-// place. Those cells sit on uniform opaque or fully transparent pixels, which
-// the noise leaves alone (it moves a pixel toward a differing neighbour with
-// alpha >= 1), so a stale mark there changes nothing a page can see.
-TEST(LazyCanvasNoiseMaskTest, StaleAaMarksOnUniformOrTransparentPixelsStayUnnoised) {
+TEST(LazyCanvasNoiseMaskTest, OneAaPlusManyImportedKeepsAa) {
   constexpr size_t kW = 32, kH = 16;
-  LazyCanvasNoiseMask lazy;
-  lazy.Add(kW, kH, 1, Ev({kW, kH, 0, 0, kW, kH, 0, Kind::kAa, true}));  // the event that is dropped
-  for (size_t i = 0; i < LazyCanvasNoiseMask::kMaxPendingEvents; ++i) {
-    lazy.Add(kW, kH, 1, Ev({kW, kH, 0, 0, 1, 1, 0, Kind::kImported, true}));
-  }
-  EXPECT_FALSE(lazy.has_aa());  // the read walks the retained events: the dropped aa never lands
-  // The dropped event marked the whole canvas aa: make the same stale mask by hand.
-  CanvasNoiseMask stale(kW, kH);
-  stale.MarkRect(0, 0, kW, kH, Kind::kAa);
-  // Left half: an opaque fill; right half: cleared (alpha 0).
-  std::vector<uint8_t> px(kW * kH * 4, 0);
-  for (size_t y = 0; y < kH; ++y) {
-    for (size_t x = 0; x < kW / 2; ++x) {
-      const size_t i = (y * kW + x) * 4;
-      px[i] = 200;
-      px[i + 1] = 30;
-      px[i + 2] = 90;
-      px[i + 3] = 255;
+  for (const size_t imported : {LazyCanvasNoiseMask::kMaxPendingEvents, size_t{1000}}) {
+    LazyCanvasNoiseMask lazy;
+    lazy.Add(kW, kH, 1, Ev({kW, kH, 0, 0, kW, kH, 0, Kind::kAa, true}));  // the whole canvas aa
+    for (size_t i = 0; i < imported; ++i) {
+      lazy.Add(kW, kH, 1, Ev({kW, kH, 0, 0, 1, 1, 0, Kind::kImported, true}));
     }
+    EXPECT_LE(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents);
+    EXPECT_TRUE(lazy.has_aa()) << imported;  // the aa event was merged, never dropped
+    EXPECT_EQ(UNSAFE_BUFFERS(lazy.view().cells[0]), kNoiseMaskAa | kNoiseMaskImported);
+    EXPECT_EQ(UNSAFE_BUFFERS(lazy.view().cells[5]), kNoiseMaskAa);
   }
-  const std::vector<uint8_t> before = px;
-  ASSERT_TRUE(PerturbRgbaEdgesInPlace(px.data(), kW, kH, kW * 4, 7, 1.0, 3, 1, stale.view(), false));
-  // The fill's own border against the cleared half is eligible only when the
-  // neighbour has alpha >= 1: it has 0, so nothing moves anywhere.
-  EXPECT_EQ(px, before);
-  // Control: a pixel that really differs from an opaque neighbour does change.
-  px = before;
-  px[(4 * kW + 3) * 4] = 10;
-  const std::vector<uint8_t> edge = px;
-  ASSERT_TRUE(PerturbRgbaEdgesInPlace(px.data(), kW, kH, kW * 4, 7, 1.0, 3, 1, stale.view(), false));
-  EXPECT_NE(px, edge);
 }
 
 TEST(LazyCanvasNoiseMaskTest, ApplyNowAppliesTheWholeQueueThisEventLast) {
@@ -893,14 +940,14 @@ TEST(DeferredMaskTest, TheCapsAreTheQueuesAndTheNotClonableLeaveTheMaskAndTheCha
     LazyCanvasNoiseMask lazy;
     EXPECT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kNone);
   }
-  {  // a queue at the job cap defers whole; the Add past it drops the oldest unwalked job (the lazy mask's own cap) and the
-    // replay is the mask without it, as the worker's own read of that queue is
+  {  // a queue at the job cap defers whole; the Add past it merges the two oldest jobs (no frame splits them), and the
+    // replay is the mask of every job, as the worker's own read of that queue is
     LazyCanvasNoiseMask lazy;
     std::vector<ScriptStep> all;
     const size_t cap = LazyCanvasNoiseMask::kMaxDeferredJobs;
     ASSERT_EQ(cap, LazyCanvasNoiseMask::kMaxPendingEvents);
     auto add = [&](size_t i) {
-      // the first job marks a cell no other job touches: its drop shows
+      // the first job marks a cell no other job touches: its loss would show
       const ScriptStep s = i == 0 ? ScriptStep{32, 32, 0, 0, 1, 1, 0, Kind::kAa, true}
                                   : ScriptStep{32, 32, static_cast<int64_t>(2 + i), 20, 1, 1, 0, Kind::kAa, true};
       all.push_back(s);
@@ -913,17 +960,17 @@ TEST(DeferredMaskTest, TheCapsAreTheQueuesAndTheNotClonableLeaveTheMaskAndTheCha
     EXPECT_EQ(d->jobs(), cap);
     uint64_t aa = 0;
     EXPECT_EQ(Cells(d->Replay()->view()), EagerCells(all, cap, -1, &aa));
-    add(cap);  // the 17th job: the first leaves the queue, and the frame above carried it: it is parked
+    add(cap);  // the 17th job: the first two merge (the frame above carries both): nothing is parked
     d.reset();
     ASSERT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kDeferred);
-    EXPECT_EQ(d->jobs(), cap + 1);  // the parked job, then the 16 queued
+    EXPECT_EQ(d->jobs(), cap);  // the merge, then 15 queued
     EXPECT_EQ(lazy.pending_events(), cap);
-    EXPECT_EQ(lazy.parked_events(), 1u);
+    EXPECT_EQ(lazy.parked_events(), 0u);
     const auto replayed = Cells(d->Replay()->view());
-    EXPECT_EQ(replayed, EagerCells(all, cap + 1, -1, &aa));  // nothing is lost yet
+    EXPECT_EQ(replayed, EagerCells(all, cap + 1, -1, &aa));  // nothing is lost
     EXPECT_EQ(replayed, Cells(lazy.view()));                 // and it is what the worker's own read gives
   }
-  {  // a canvas no frame was taken from drops the oldest job unwalked, as before (no parking, no signal)
+  {  // a canvas no frame was taken from merges the oldest jobs too (no parking, no signal), and loses nothing
     LazyCanvasNoiseMask lazy;
     std::vector<ScriptStep> all;
     for (size_t i = 0; i <= LazyCanvasNoiseMask::kMaxPendingEvents; ++i) {
@@ -935,7 +982,7 @@ TEST(DeferredMaskTest, TheCapsAreTheQueuesAndTheNotClonableLeaveTheMaskAndTheCha
     EXPECT_EQ(lazy.parked_events(), 0u);
     EXPECT_EQ(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents);
     uint64_t aa = 0;
-    EXPECT_NE(Cells(lazy.view()), EagerCells(all, all.size(), -1, &aa));
+    EXPECT_EQ(Cells(lazy.view()), EagerCells(all, all.size(), -1, &aa));
   }
   {  // one recording past the byte cap is not deferred (the queue keeps it, as its only entry)
     LazyCanvasNoiseMask lazy;
@@ -947,7 +994,7 @@ TEST(DeferredMaskTest, TheCapsAreTheQueuesAndTheNotClonableLeaveTheMaskAndTheCha
     EXPECT_EQ(big.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kOverCap);
     EXPECT_FALSE(d);
   }
-  {  // past the byte cap the Add drops oldest jobs until under it: what is left defers
+  {  // past the byte cap the Add walks oldest jobs until under it: what is left defers
     LazyCanvasNoiseMask lazy;
     const size_t nine_sixteenths = LazyCanvasNoiseMask::kMaxDeferredBytes * 9 / 16;
     lazy.Add(32, 32, nine_sixteenths, job(0));
@@ -1087,46 +1134,61 @@ struct Worker {
   }
 };
 
-TEST(ParkedJobsTest, AJobTheLastFrameCarriedIsParkedNotDroppedAndEveryReadWalksItFirst) {
+TEST(ParkedJobsTest, JobsPastTheCountCapAreMergedEvenWhenTheLastFrameCarriesThemAndEveryReadWalksThem) {
   Worker w;
-  for (size_t i = 1; i <= 16; ++i) {
-    w.Flush(i, 0);
-  }
-  for (size_t i = 17; i <= 20; ++i) {
+  for (size_t i = 1; i <= 20; ++i) {
     w.Flush(i, 0);
   }
   EXPECT_EQ(w.lazy.pending_events(), 16u);
-  EXPECT_EQ(w.lazy.parked_events(), 4u);
-  EXPECT_EQ(w.frame->jobs(), 20u);
-  // what the frame pins counts the parked jobs too, as the lazy mask's own accounting does
-  EXPECT_EQ(w.frame->bytes(), 20u);
-  EXPECT_EQ(w.lazy.parked_bytes(), 4u);
-  EXPECT_EQ(w.lazy.pending_bytes(), 16u);
+  EXPECT_EQ(w.lazy.parked_events(), 0u);  // the two oldest of one size merge: nothing needs parking
+  EXPECT_EQ(w.frame->jobs(), 16u);
+  // what the frame pins is all 20 jobs, as the lazy mask's own accounting says
+  const size_t floor = LazyCanvasNoiseMask::kMinPartBytes;
+  EXPECT_EQ(w.frame->bytes(), 20 * floor);
+  EXPECT_EQ(w.lazy.pending_bytes(), 20 * floor);
   EXPECT_EQ(Cells(w.frame->Replay()->view()), EagerRange(1, 20));
   EXPECT_EQ(Cells(w.lazy.view()), EagerRange(1, 20));  // the worker's own read agrees
-  EXPECT_EQ(w.lazy.parked_events(), 0u);
-  EXPECT_EQ(w.lazy.counters().parked_walked, 4u);
+  EXPECT_EQ(w.lazy.counters().parked_walked, 0u);
 }
 
-TEST(ParkedJobsTest, TheIdleWalkWalksParkedJobsBeforeTheQueue) {
+// The job the last frame carried cannot merge with its neighbour (another canvas size): the count route walks it at the
+// 17th job, carried or not, so the count of flushes never loses a mark (only the byte cap parks).
+TEST(ParkedJobsTest, AJobNothingCanMergeWithIsWalkedAtTheCountCapEvenWhenTheLastFrameCarriedIt) {
+  LazyCanvasNoiseMask lazy;
+  int allowed = 0;
+  scoped_refptr<const DeferredMask> d;
+  lazy.Add(32, 32, 1, UniqueJob(0, &allowed));
+  ASSERT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kDeferred);
+  for (size_t i = 1; i <= 16; ++i) {  // alternate sizes: no two neighbours merge
+    const size_t w = i % 2 ? 48 : 32, h = i % 2 ? 40 : 32;
+    lazy.Add(w, h, 1, std::make_unique<CloneJob>(std::vector<ScriptStep>{{w, h, 1, 1, 1, 1, 0, Kind::kAa, true}}, &allowed));
+  }
+  EXPECT_EQ(lazy.pending_events(), 16u);
+  EXPECT_EQ(lazy.parked_events(), 0u);  // job 0: carried by the frame, walked all the same
+  EXPECT_EQ(lazy.counters().parked_total, 0u);
+  EXPECT_EQ(lazy.counters().dropped_total, 0u);  // gone from the queue, not parked, not dropped: walked
+}
+
+TEST(ParkedJobsTest, TheIdleWalkWalksTheMergedFrontBeforeTheRest) {
   Worker w;
   for (size_t i = 1; i <= 18; ++i) {
     w.Flush(i, 0);
   }
-  ASSERT_EQ(w.lazy.parked_events(), 2u);
+  ASSERT_EQ(w.lazy.parked_events(), 0u);
+  ASSERT_EQ(w.lazy.pending_events(), 16u);  // jobs 1..3 are one merged job at the front
   w.allowed = 100;
   const base::TimeTicks later = base::TimeTicks::Now() + base::Hours(1);
-  EXPECT_TRUE(w.lazy.ApplyOldest(later));
-  EXPECT_TRUE(w.lazy.ApplyOldest(later));
-  EXPECT_EQ(w.lazy.parked_events(), 0u);
-  EXPECT_EQ(w.lazy.pending_events(), 16u);
+  EXPECT_TRUE(w.lazy.ApplyOldest(later));  // the merge, all three parts
+  EXPECT_EQ(w.lazy.pending_events(), 15u);
+  EXPECT_TRUE(w.lazy.ApplyOldest(later));  // job 4
+  EXPECT_EQ(w.lazy.pending_events(), 14u);
   EXPECT_EQ(Cells(w.lazy.view()), EagerRange(1, 18));
 }
 
 TEST(ParkedJobsTest, WhatThePageReadStaysMarkedAfterManyUnreadFlushes) {
   // The page reads the frame of job 16 (the signal arrives at once); the worker
-  // flushes on to 60 with no worker read. The frame of 60 carries the jobs the
-  // page saw, as the first read did.
+  // flushes on to 60 with no worker read. The frame of 60 carries every job
+  // (merged past 16), so it shows what the first read did and the rest too.
   Worker w;
   for (size_t i = 1; i <= 60; ++i) {
     w.Flush(i, 16);
@@ -1134,16 +1196,7 @@ TEST(ParkedJobsTest, WhatThePageReadStaysMarkedAfterManyUnreadFlushes) {
   const auto first_read = Cells(w.read_frame->Replay()->view());
   EXPECT_EQ(first_read, EagerRange(1, 16));
   const auto second = Cells(w.frame->Replay()->view());
-  // jobs 1..16 are in the base (walked instead of dropped), 17..28 were never
-  // seen and fell out of the parked list unwalked (the known hole), 29..60 ride.
-  CanvasNoiseMask want(32, 32);
-  for (size_t i = 1; i <= 16; ++i) {
-    Apply(Unique(i), want);
-  }
-  for (size_t i = 29; i <= 60; ++i) {
-    Apply(Unique(i), want);
-  }
-  EXPECT_EQ(second, Cells(want.view()));
+  EXPECT_EQ(second, EagerRange(1, 60));
   for (size_t i = 1; i <= 16; ++i) {  // the re-read: every cell the first read marked is marked
     CanvasNoiseMask one(32, 32);
     Apply(Unique(i), one);
@@ -1154,47 +1207,37 @@ TEST(ParkedJobsTest, WhatThePageReadStaysMarkedAfterManyUnreadFlushes) {
       }
     }
   }
-  EXPECT_EQ(Cells(w.lazy.view()), Cells(want.view()));  // the worker's own read, the same
-  EXPECT_GT(w.lazy.counters().seen_walked, 0u);
-  EXPECT_EQ(w.lazy.counters().parked_evicted, 12u);
+  EXPECT_EQ(Cells(w.lazy.view()), EagerRange(1, 60));  // the worker's own read, the same
+  EXPECT_EQ(w.lazy.counters().seen_walked, 0u);
+  EXPECT_EQ(w.lazy.counters().parked_evicted, 0u);
   EXPECT_EQ(w.lazy.counters().signals, 1u);
 }
 
-TEST(ParkedJobsTest, WithoutTheSignalTheSameRunLosesTheJobsTheFirstReadSaw) {
+TEST(ParkedJobsTest, WithoutTheSignalTheSameRunLosesNothing) {
   Worker w;
   for (size_t i = 1; i <= 60; ++i) {
     w.Flush(i, 0);
   }
   const auto second = Cells(w.frame->Replay()->view());
-  EXPECT_EQ(second, EagerRange(29, 60));  // 1..28 are gone: a second read shows them raw
+  EXPECT_EQ(second, EagerRange(1, 60));  // merged, not dropped: a second read shows every job
 }
 
-TEST(ParkedJobsTest, ASignalThatArrivesAfterTheJobsWereShedStillFindsThemParked) {
+TEST(ParkedJobsTest, ASignalThatArrivesAfterTheJobsWereMergedChangesNothing) {
   Worker w;
   for (size_t i = 1; i <= 16; ++i) {
     w.Flush(i, 0);
   }
   const auto read = w.frame;  // the page reads this frame...
   for (size_t i = 17; i <= 30; ++i) {
-    w.Flush(i, 0);  // ...the worker sheds jobs 1..14 before the signal arrives
+    w.Flush(i, 0);  // ...the worker merges jobs 1..15 before the signal arrives
   }
-  ASSERT_EQ(w.lazy.parked_events(), 14u);
+  ASSERT_EQ(w.lazy.parked_events(), 0u);
   w.lazy.NoteSeen(read->last_id());  // a task late
-  // parked jobs are still unwalked: more flushes evict them, and walk (not drop) those seen
   for (size_t i = 31; i <= 50; ++i) {
     w.Flush(i, 0);
   }
-  const auto second = Cells(w.frame->Replay()->view());
-  CanvasNoiseMask want(32, 32);
-  for (size_t i = 1; i <= 16; ++i) {
-    Apply(Unique(i), want);
-  }
-  // 17 and 18 were never read and fell out of the parked list (it holds 16)
-  for (size_t i = 19; i <= 50; ++i) {
-    Apply(Unique(i), want);
-  }
-  EXPECT_EQ(second, Cells(want.view()));
-  EXPECT_EQ(w.lazy.counters().parked_evicted, 2u);
+  EXPECT_EQ(Cells(w.frame->Replay()->view()), EagerRange(1, 50));
+  EXPECT_EQ(w.lazy.counters().parked_evicted, 0u);
 }
 
 TEST(ParkedJobsTest, ParkedJobsAreBoundedByCountAndBytesAndFreedByReset) {
@@ -1211,7 +1254,7 @@ TEST(ParkedJobsTest, ParkedJobsAreBoundedByCountAndBytesAndFreedByReset) {
   big.Add(32, 32, 1, UniqueJob(1, &allowed));
   ASSERT_EQ(big.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kDeferred);
   for (size_t i = 2; i <= 40; ++i) {
-    big.Add(32, 32, i % 2 ? half : 1, UniqueJob(i, &allowed));  // sheds (and parks) while over the byte cap
+    big.Add(32, 32, i % 2 ? half : 1, UniqueJob(i, &allowed));  // parks while over the byte cap
     d.reset();
     big.Defer(nullptr, &d);
     EXPECT_LE(big.parked_bytes(), LazyCanvasNoiseMask::kMaxParkedBytes);
@@ -1281,7 +1324,7 @@ TEST(DeferredMaskTest, AJobThatCannotBeCopiedMidWalkIsAppliedByTheWorkerAndTheMa
   EXPECT_EQ(Cells(lazy.view()), want);  // applied, in order, as before
 }
 
-TEST(DeferredMaskTest, AParkedJobThatCannotBeCopiedAlsoMakesTheFrameApplyOnTheWorker) {
+TEST(DeferredMaskTest, AnEventQueuedAfterAMergeStillMakesTheFrameApplyOnTheWorker) {
   const auto steps = Script32();
   LazyCanvasNoiseMask lazy;
   int allowed = 0;
@@ -1291,8 +1334,8 @@ TEST(DeferredMaskTest, AParkedJobThatCannotBeCopiedAlsoMakesTheFrameApplyOnTheWo
     lazy.Add(32, 32, 1, UniqueJob(i, &allowed));
   }
   ASSERT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kDeferred);
-  lazy.Add(32, 32, 1, UniqueJob(40, &allowed));  // the first job is parked
-  ASSERT_EQ(lazy.parked_events(), 1u);
+  lazy.Add(32, 32, 1, UniqueJob(40, &allowed));  // the first two jobs merge
+  ASSERT_EQ(lazy.parked_events(), 0u);
   lazy.Add(32, 32, 1, Ev(steps[1]));  // an event in the queue
   d.reset();
   EXPECT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kNotClonable);
@@ -1442,6 +1485,241 @@ TEST(DeferredMaskContinueTest, AResetOrAResizeIsANewEpoch) {
   lazy.Add(48, 40, 1, std::make_unique<CloneJob>(Slice(steps, 5, 6), &allowed));
   lazy.view();
   EXPECT_NE(lazy.epoch(), e1);
+}
+
+// ---- Merging past the count cap, walking past the byte cap ----
+
+// `n` clonable jobs of two scripted steps each (Script32, shifted), in `lazy`; their steps in order in `*all`.
+void AddTwoStepJobs(LazyCanvasNoiseMask& lazy, size_t n, int* allowed, std::vector<ScriptStep>* all) {
+  const auto steps = Script32();
+  for (size_t i = 0; i < n; ++i) {
+    const std::vector<ScriptStep> two = {steps[i % 7], steps[(i + 3) % 7]};
+    all->insert(all->end(), two.begin(), two.end());
+    lazy.Add(32, 32, 1, std::make_unique<CloneJob>(two, allowed));
+  }
+}
+
+TEST(LazyCanvasNoiseMaskTest, MergedJobResumesMidPart) {
+  LazyCanvasNoiseMask lazy;
+  int allowed = 0;
+  std::vector<ScriptStep> all;
+  AddTwoStepJobs(lazy, 20, &allowed, &all);
+  EXPECT_EQ(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents);
+  const base::TimeTicks later = base::TimeTicks::Now() + base::Hours(1);
+  size_t calls = 0;
+  while (lazy.has_work()) {
+    allowed = 0;  // an expired deadline: no slice runs, between parts or inside one
+    lazy.ApplyOldest(later);
+    allowed = 1;  // one slice: stops inside a part
+    lazy.ApplyOldest(later);
+    ASSERT_LT(++calls, 1000u);
+  }
+  uint64_t aa = 0;
+  EXPECT_EQ(Cells(lazy.view()), EagerCells(all, all.size(), -1, &aa));
+}
+
+TEST(LazyCanvasNoiseMaskTest, MergedCloneIsIndependent) {
+  LazyCanvasNoiseMask lazy;
+  int allowed = 0;
+  std::vector<ScriptStep> all;
+  AddTwoStepJobs(lazy, 20, &allowed, &all);
+  scoped_refptr<const DeferredMask> d;
+  ASSERT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kDeferred);
+  uint64_t aa = 0;
+  const auto want = EagerCells(all, all.size(), -1, &aa);
+  EXPECT_EQ(Cells(d->Replay()->view()), want);  // a clone stepped to its end
+  EXPECT_EQ(Cells(d->Replay()->view()), want);  // and again
+  EXPECT_EQ(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents);  // the original is untouched
+  EXPECT_EQ(Cells(lazy.view()), want);
+}
+
+TEST(LazyCanvasNoiseMaskTest, ResizeErasesMergedFront) {
+  const auto steps = Script32();
+  LazyCanvasNoiseMask lazy;
+  for (size_t i = 0; i < 17; ++i) {  // the first two merge
+    lazy.Add(32, 32, 1, Ev(steps[i % 5]));
+  }
+  const ScriptStep resized = {48, 40, 5, 5, 9, 9, 90, Kind::kAa, false};
+  lazy.Add(48, 40, 1, Ev(resized));
+  const NoiseMask v = lazy.view();
+  EXPECT_EQ(v.width, 48u);
+  EXPECT_EQ(v.height, 40u);
+  uint64_t aa = 0;
+  EXPECT_EQ(Cells(v), EagerCells({resized}, 1, -1, &aa));  // the older jobs were erased by the resize, as today
+}
+
+TEST(LazyCanvasNoiseMaskTest, MergeNeverStraddlesDeferred) {
+  LazyCanvasNoiseMask lazy;
+  int allowed = 0;
+  for (size_t i = 1; i <= 8; ++i) {
+    lazy.Add(32, 32, 1, UniqueJob(i, &allowed));
+  }
+  scoped_refptr<const DeferredMask> d1;
+  ASSERT_EQ(lazy.Defer(nullptr, &d1), LazyCanvasNoiseMask::DeferStatus::kDeferred);  // carries jobs 1..8
+  auto memo = d1->Replay();
+  const uint64_t memo_id = d1->last_id();
+  for (size_t i = 9; i <= 30; ++i) {
+    lazy.Add(32, 32, 1, UniqueJob(i, &allowed));
+  }
+  EXPECT_EQ(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents);
+  scoped_refptr<const DeferredMask> d2;
+  ASSERT_EQ(lazy.Defer(nullptr, &d2), LazyCanvasNoiseMask::DeferStatus::kDeferred);
+  // Jobs 1..8 are one merge (its id is 8, not past the memo), and 9..30 are 15 more: a merge across 8 would count 16.
+  size_t stepped = 0;
+  ASSERT_TRUE(d2->Continue(*memo, d1->epoch(), memo_id, &stepped));
+  EXPECT_EQ(stepped, 15u);
+  EXPECT_EQ(Cells(memo->view()), EagerRange(1, 30));
+}
+
+TEST(LazyCanvasNoiseMaskTest, MergedWithEventIsNotClonable) {
+  LazyCanvasNoiseMask lazy;
+  int allowed = 0;
+  lazy.Add(32, 32, 1, Ev(Unique(0)));  // an event first: the 17th job merges it into the front
+  for (size_t i = 1; i <= 16; ++i) {
+    lazy.Add(32, 32, 1, UniqueJob(i, &allowed));
+  }
+  EXPECT_EQ(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents);
+  scoped_refptr<const DeferredMask> d;
+  EXPECT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kNotClonable);
+  EXPECT_FALSE(d);
+  EXPECT_EQ(Cells(lazy.view()), EagerRange(0, 16));  // applied as before
+}
+
+TEST(LazyCanvasNoiseMaskTest, TheByteCapWalksEventsNeverDropsThem) {
+  LazyCanvasNoiseMask lazy;
+  for (size_t i = 0; i < 40; ++i) {  // 40 MB of events, each marking a cell of its own
+    lazy.Add(32, 32, size_t{1} << 20, Ev(Unique(i)));
+    EXPECT_LE(lazy.pending_bytes(), LazyCanvasNoiseMask::kMaxPendingBytes) << i;
+  }
+  EXPECT_EQ(Cells(lazy.view()), EagerRange(0, 39));  // every mark is there
+  EXPECT_EQ(lazy.counters().dropped_total, 0u);
+}
+
+// Past 16 MB the oldest recordings are released unwalked, part by part out of a merge.
+TEST(LazyCanvasNoiseMaskTest, TheByteCapDropsTheOldestRecordingsUnwalked) {
+  LazyCanvasNoiseMask lazy;
+  int allowed = 0;
+  for (size_t i = 0; i < 40; ++i) {  // 40 MB of recordings, each marking a cell of its own
+    lazy.Add(32, 32, size_t{1} << 20, UniqueJob(i, &allowed));
+    EXPECT_LE(lazy.pending_bytes(), LazyCanvasNoiseMask::kMaxPendingBytes) << i;
+  }
+  EXPECT_EQ(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents);
+  EXPECT_EQ(lazy.counters().merged_total, 24u);
+  EXPECT_EQ(lazy.counters().dropped_total, 24u);  // jobs 0..23, one part each, never walked
+  EXPECT_EQ(lazy.parked_events(), 0u);
+  EXPECT_EQ(Cells(lazy.view()), EagerRange(24, 39));
+}
+
+TEST(LazyCanvasNoiseMaskTest, TheByteCapDropsOnlyRecordingsOutOfAMixedMerge) {
+  LazyCanvasNoiseMask lazy;
+  int allowed = 0;
+  for (size_t i = 0; i < 40; ++i) {  // even: a 1 MB recording; odd: a put (a zero-byte event)
+    if (i % 2 == 0) {
+      lazy.Add(32, 32, size_t{1} << 20, UniqueJob(i, &allowed));
+    } else {
+      lazy.Add(32, 32, 0, Ev(Unique(i)));
+    }
+  }
+  const auto cells = Cells(lazy.view());
+  auto marked = [&](size_t i) {
+    CanvasNoiseMask one(32, 32);
+    Apply(Unique(i), one);
+    const auto c = Cells(one.view());
+    for (size_t k = 0; k < c.size(); ++k) {
+      if (c[k]) {
+        return cells[k] != 0;
+      }
+    }
+    return false;
+  };
+  size_t first_kept = 40;
+  for (size_t i = 0; i < 40; i += 2) {
+    if (marked(i)) {
+      first_kept = std::min(first_kept, i);
+    }
+  }
+  ASSERT_GT(first_kept, 0u);  // some recordings were dropped
+  for (size_t i = 0; i < 40; ++i) {
+    EXPECT_EQ(marked(i), i % 2 == 1 || i >= first_kept) << i;  // every put is there; the dropped are the oldest
+  }
+  EXPECT_EQ(lazy.counters().dropped_total, first_kept / 2);
+}
+
+// A job the last frame carries is parked at the byte cap, not dropped, and its eviction drops it unless the page read a
+// frame that carried it.
+TEST(ParkedJobsTest, AtTheByteCapACarriedJobIsParkedAndItsEvictionDropsItUnlessSeen) {
+  for (const bool seen : {false, true}) {
+    LazyCanvasNoiseMask lazy;
+    int allowed = 0;
+    scoped_refptr<const DeferredMask> d;
+    for (size_t i = 0; i < 40; ++i) {  // 4 MB per flush, each committed as a frame
+      lazy.Add(32, 32, size_t{4} << 20, UniqueJob(i, &allowed));
+      d.reset();
+      ASSERT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kDeferred) << i;
+      if (seen) {
+        lazy.NoteSeen(d->last_id());
+      }
+    }
+    EXPECT_EQ(lazy.counters().dropped_total, 0u) << seen;  // every front was carried: parked, not dropped
+    EXPECT_GT(lazy.counters().parked_total, 0u) << seen;
+    EXPECT_LE(lazy.parked_bytes(), LazyCanvasNoiseMask::kMaxParkedBytes) << seen;
+    if (seen) {
+      EXPECT_EQ(lazy.counters().parked_evicted, 0u);
+      EXPECT_GT(lazy.counters().seen_walked, 0u);
+      EXPECT_EQ(Cells(lazy.view()), EagerRange(0, 39));
+    } else {
+      EXPECT_GT(lazy.counters().parked_evicted, 0u);
+      EXPECT_EQ(lazy.counters().seen_walked, 0u);
+      EXPECT_EQ(Cells(lazy.view()), EagerRange(lazy.counters().parked_evicted, 39));
+    }
+  }
+}
+
+// Overdraw elision: Blink resets the queue when it records a clearRect that covers every pixel (CheckOverdraw). Such a
+// clear sets every cell to nothing whatever it held, so the mask after it is the mask of walking every older job and
+// then the clear, byte for byte: nothing visible is dropped.
+TEST(LazyCanvasNoiseMaskTest, AResetBeforeAFullCanvasClearEqualsWalkingEveryOlderJobThenTheClear) {
+  for (const size_t n : {size_t{32}, size_t{4100}}) {  // one cell per pixel; 4 x 4 px cells
+    const std::vector<ScriptStep> before = {
+        {n, n, 2, 2, 8, 8, 100, Kind::kAa, false},
+        {n, n, 10, 10, 6, 6, 0, Kind::kImported, true},
+        {n, n, 0, 0, 12, 12, 128, Kind::kSolid, false},
+    };
+    const std::vector<ScriptStep> after = {
+        {n, n, 4, 4, 8, 8, 90, Kind::kAa, false},
+        {n, n, 20, 0, 3, 3, 0, Kind::kImported, true},
+    };
+    const ScriptStep clear = {n, n, 0, 0, n, n, 0, Kind::kClear, true};
+    LazyCanvasNoiseMask walked, elided;
+    for (const ScriptStep& s : before) {
+      walked.Add(n, n, 1, Ev(s));
+      elided.Add(n, n, 1, Ev(s));
+    }
+    elided.Reset();
+    EXPECT_FALSE(elided.has_work());
+    walked.Add(n, n, 1, Ev(clear));
+    elided.Add(n, n, 1, Ev(clear));
+    for (const ScriptStep& s : after) {
+      walked.Add(n, n, 1, Ev(s));
+      elided.Add(n, n, 1, Ev(s));
+    }
+    EXPECT_EQ(Cells(walked.view()), Cells(elided.view())) << n;
+    EXPECT_EQ(walked.has_aa(), elided.has_aa()) << n;
+  }
+}
+
+TEST(LazyCanvasNoiseMaskTest, ZeroByteEventsBounded) {
+  constexpr size_t kN = 200000;
+  LazyCanvasNoiseMask lazy;
+  CanvasNoiseMask eager(512, 512);
+  for (size_t i = 0; i < kN; ++i) {
+    const int64_t x = static_cast<int64_t>(i % 512), y = static_cast<int64_t>(i / 512);
+    eager.MarkRect(x, y, 1, 1, Kind::kAa);
+    lazy.Add(512, 512, 0, base::BindOnce([](int64_t x, int64_t y, CanvasNoiseMask& m) { m.MarkRect(x, y, 1, 1, Kind::kAa); }, x, y));
+  }
+  EXPECT_LE(lazy.pending_bytes(), LazyCanvasNoiseMask::kMaxPendingBytes);
+  EXPECT_LE(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents);
+  EXPECT_EQ(Cells(lazy.view()), Cells(eager.view()));
 }
 
 }  // namespace
