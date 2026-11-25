@@ -3815,11 +3815,12 @@ if want("c99"):
     lifecycle_rows()
 
 # C69: many flushes and no read between them must not lose the marks of the first. A canvas outside the page flushes its recording at
-# the end of every task that drew on it (FinalizeFrame; a worker's OffscreenCanvas does not, measured on the box). The 64 tasks are
-# MessageChannel messages queued at once, so they run back to back and every flush is still queued when the read comes. The first
+# the end of every task that drew on it (FinalizeFrame; a worker's OffscreenCanvas does not, measured on the box). The 160 tasks are
+# MessageChannel messages queued at once (64 gave only 32 traced flushes on -17 on the real GPU, under the floor of 40), so they
+# run back to back and every flush is still queued when the read comes. The first
 # circles must read noised: they differ from the unconfigured read. The trace proves the flushes happened (a coalesced or CPU-rastered
 # run queues nothing and is UNMEASURED, not PASS).
-C69A = ("C69a a canvas outside the page: three circles, then 64 MessageChannel tasks of one arc each queued at once (one flush each), "
+C69A = ("C69a a canvas outside the page: three circles, then 160 MessageChannel tasks of one arc each queued at once (one flush each), "
         "then one read: the same in two seeded runs, and the first circles read differently from unconfigured (seed 7); fewer than 40 "
         "traced flushes, or last arcs that read like unconfigured, is UNMEASURED")
 C69A_MIN_FLUSHES = 40
@@ -3828,8 +3829,8 @@ C69A_SCENE = """async () => {
   for (let j = 0; j < 3; j++) { x.beginPath(); x.arc(12 + j * 20, 20, 8.3, 0, Math.PI * 2); x.fill(); }
   const ch = new MessageChannel(); let n = 0;
   await new Promise((done) => { ch.port1.onmessage = (e) => { const i = e.data;
-      x.beginPath(); x.arc(400, 20, 6.3 + (i & 1) * 0.5, 0, Math.PI * 2); x.fill(); if (++n === 64) done(); };
-    for (let i = 0; i < 64; i++) ch.port2.postMessage(i); });
+      x.beginPath(); x.arc(400, 20, 6.3 + (i & 1) * 0.5, 0, Math.PI * 2); x.fill(); if (++n === 160) done(); };
+    for (let i = 0; i < 160; i++) ch.port2.postMessage(i); });
   const d = x.getImageData(0, 0, 500, 40).data; const first = [], last = [];
   for (let y = 0; y < 40; y++) for (let q = 0; q < 500; q++) { const o = (y * 500 + q) * 4;
     (q < 60 ? first : q >= 340 ? last : []).push(d[o], d[o + 1], d[o + 2], d[o + 3]); }
