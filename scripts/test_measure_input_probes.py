@@ -18,6 +18,20 @@ class Paths(unittest.TestCase):
         self.assertEqual((p[0][1:], p[-1][1:]), ((0, 0), (100, 50)))
         self.assertAlmostEqual(p[1][0] - p[0][0], 8.0)
 
+    def test_slow_control_stretches_only_the_move_sweeps(self):
+        class Rec:
+            def __init__(self):
+                self.d = []
+
+            def sweep(self, p0, p1, dur, hz=None, bow=0.0):
+                self.d.append(dur)
+        fast, slow = Rec(), Rec()
+        M.gesture(fast, "move", 800, 600, None)
+        M.gesture(slow, "move", 800, 600, None, slow=M.SLOW)
+        self.assertEqual(slow.d, [d * M.SLOW for d in fast.d])
+        self.assertEqual(M.gesture_slow("ctl125slow"), M.SLOW)
+        self.assertEqual([M.gesture_slow(a) for a in ("ctl125", "rawh", "red")], [1, 1, 1])
+
     def test_edge_legs_leave_the_viewport(self):
         for _, e in M.edge_legs(800, 600):
             self.assertTrue(e[0] < 0 or e[0] > 800 or e[1] < 0 or e[1] > 600)
@@ -60,6 +74,32 @@ class Report(unittest.TestCase):
         self.assertRegex(t, r"\| I1 \| human \| 4 \| PASS")
         self.assertIn("| I5 | human | 0 | n/a (no API)", t)
         self.assertIn("cannot fail live", t)
+
+    def test_slow_control_is_a_group_only_when_it_ran(self):
+        d = pathlib.Path(tempfile.mkdtemp())
+        for arm in ("ctl125", "ctl1000"):
+            for i, p in enumerate((0.5, 1.0, 1.5, 0.8)):
+                self.put(d, arm, i, {"snap": self.snap(T.real_moves(phase=p))})
+        for i in range(4):
+            self.put(d, "red", i, {"snap": self.snap(T.burst_moves())})
+        t = self.report(d)
+        self.assertNotIn("ctl125slow", t)                           # an old run's report is unchanged
+        self.assertRegex(t, r"\| I1 \| red \| 4 \| FAIL")
+        for i in range(4):                                          # a slow control that looks like the arm
+            self.put(d, "ctl125slow", i, {"snap": self.snap(T.burst_moves())})
+        t = self.report(d)
+        self.assertRegex(t, r"\| I1 \| red \| 4 \| PASS \| per rate: ctl125: FAIL; ctl1000: FAIL; ctl125slow: PASS")
+        self.assertNotRegex(t, r"\| I\d \| ctl125slow \|")          # a control is never judged as an arm
+
+    def test_summary_has_the_move_phase_seconds(self):
+        d = pathlib.Path(tempfile.mkdtemp())
+        pms = [T.ev("pointermove", i * 100.0, now=i * 100.0, cs=2) for i in range(60)]     # 5.9 s first to last
+        for i in range(4):
+            self.put(d, "rawh", i, {"snap": self.snap([dict(e) for e in pms])})
+        t = self.report(d)
+        self.assertIn("| move s |", t)
+        row = next(ln for ln in t.splitlines() if ln.startswith("| rawh | 4 |"))
+        self.assertTrue(row.endswith("| 5.9 |"), row)
 
     def test_run_that_raised_is_unmeasured_not_a_keyerror(self):
         d = pathlib.Path(tempfile.mkdtemp())

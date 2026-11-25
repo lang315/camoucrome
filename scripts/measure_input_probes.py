@@ -4,6 +4,8 @@ under OS input? Measures only; fixes are decided per row afterwards.
 
 Arms (all on the Windows host, one launch per arm and run, every row in one page load, phases told to the page):
   ctl125, ctl1000  stock chrome.exe, Win32 SendInput (no CDP); 125 and 1000 Hz pointer, the control's envelope
+  ctl125slow       ctl125 with the move sweeps SLOW times longer (opt-in: not in the default --arms): a control at about
+                   rawh's pointer speed, a third control group in the report only when it ran
   raw              fork, patchright, page.mouse/keyboard (humanize off), a path at 125 Hz
   rawh             the same with humanize:enabled
   human            fork + camoucrome.human (click only: rows I1-I3; the rest is n/a, no API)
@@ -42,7 +44,10 @@ DPR = 1.25
 WIN = (1000, 700)
 POS = (360, 160)
 ARMS = ("ctl125", "ctl1000", "raw", "rawh", "human", "red")
-CTL = ("ctl125", "ctl1000")
+CTL = ("ctl125", "ctl1000", "ctl125slow")
+# rawh's move phase took about 60 s against raw's 4.8 s (measurements/2026-11-22-input-p0.md): each CDP step becomes a
+# humanized path of at least humanize:minTime. The report's "move s" column checks the match in the same session.
+SLOW = 12
 PHASE_OF = {"I1": "move", "I2": "move", "I2b": "move", "I2c": "move", "I3": "move", "I4": "edge", "I5": "click", "I6": "key", "I7": "move"}
 PHASES = ("move", "edge", "click", "key")
 FLUSH_S = 0.8       # the page posts every 300 ms and learns a phase on the reply
@@ -229,11 +234,15 @@ class CdpActor:
         pass
 
 
-def gesture(actor, phase, w, h, kb):
-    """One phase's gesture. Returns False when this arm has no gesture for the phase (n/a)."""
+def gesture_slow(arm):
+    return SLOW if arm == "ctl125slow" else 1
+
+
+def gesture(actor, phase, w, h, kb, slow=1):
+    """One phase's gesture. Returns False when this arm has no gesture for the phase (n/a). slow stretches the move sweeps."""
     if phase == "move":
         for a, b, d, _ in move_routes(w, h):
-            actor.sweep(a, b, d)
+            actor.sweep(a, b, d * slow)
     elif phase == "edge":
         for c, e in edge_legs(w, h):
             actor.sweep(c, e, 450)
@@ -402,7 +411,7 @@ def run_arm(arm, i, a, srv, st, out):
             time.sleep(FLUSH_S)
             e = [e for e in st.snap["ev"] if e["ph"] == "cal" and e["t"] == "mousemove"][-1]
             origin = (POS[0] + 320 - e["x"] * DPR, POS[1] + 310 - e["y"] * DPR)
-            hz = 125 if arm == "ctl125" else 1000
+            hz = 1000 if arm == "ctl1000" else 125
             actor = SendActor(si, origin, hz)
             rec["origin"], rec["foreground_ok"] = list(origin), foreground_is(si, pids)
             if not rec["foreground_ok"]:
@@ -423,7 +432,7 @@ def run_arm(arm, i, a, srv, st, out):
                 if arm in CTL and not foreground_is(si, pids):
                     rec["unmeasured"] = f"foreground left the browser before {ph}"
                     return rec
-                gesture(actor, ph, w, h, kb)
+                gesture(actor, ph, w, h, kb, slow=gesture_slow(arm))
                 if arm in CTL and not foreground_is(si, pids):
                     rec["unmeasured"] = f"focus lost during {ph}"
                     return rec
@@ -546,7 +555,7 @@ def cmd_report(a):
         return [r for r in rs if not r.get("unmeasured") and r.get("snap")]
 
     # one control group per pointer rate, never pooled
-    ctl = {arm: measured(by.get(arm, [])) for arm in CTL}
+    ctl = {arm: measured(by.get(arm, [])) for arm in CTL if arm != "ctl125slow" or arm in by}
     lines = ["| row | arm | n | verdict | detail |", "|---|---|---|---|---|"]
     for row in R.ROWS:
         for arm, rs in by.items():
@@ -568,8 +577,8 @@ def cmd_report(a):
             lines.append(f"| {row} | {arm} | {len(good)} | {R.row_verdict(v)} | per rate: {v['_row'][2]}; {det} |")
     lines += ["", "red's I1 cannot fail live (Chrome coalesces a burst to one move per frame); the planted case is the "
               "synthetic fixture. I1 is UNMEASURED when fewer than 90 % of the moves lie inside the tick log. I6's key timing is authored by the harness in every arm and is INFO, not judged."]
-    lines += ["", "| arm | n | polling | pointermoves | coalesced list > cap | of those on a frame that came > 25 ms after the one before (page rAF ticks) | rAF ticks | rAF gaps > 25 ms | rAF gaps > 40 ms | list max | list p99 |",
-              "|---|---|---|---|---|---|---|---|---|---|---|"]
+    lines += ["", "| arm | n | polling | pointermoves | coalesced list > cap | of those on a frame that came > 25 ms after the one before (page rAF ticks) | rAF ticks | rAF gaps > 25 ms | rAF gaps > 40 ms | list max | list p99 | move s |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for arm, rs in by.items():
         good = measured(rs)
         if not good:
@@ -577,7 +586,7 @@ def cmd_report(a):
         hz = good[0].get("polling_hz") or 125
         cap = 18 if hz == 1000 else 4
         n = over = skip = ticks = g25 = g40 = 0
-        sizes = []
+        sizes, span = [], []
         for r in good:
             lg = split(r["snap"], "I2")
             mv = [e["now"] for e in lg["ev"]]
@@ -587,11 +596,13 @@ def cmd_report(a):
             g25 += sum(1 for x in gp if x > 25)
             g40 += sum(1 for x in gp if x > 40)
             pm = R.evs(lg, "pointermove")
+            if pm:      # the pointer's speed: first to last pointermove of the move phase
+                span.append((max(e["now"] for e in pm) - min(e["now"] for e in pm)) / 1000)
             sizes += [e["cs"] for e in pm if e["cs"] >= 0]
             n += len(pm)
             over += sum(1 for e in pm if e["cs"] > cap)
             skip += R.after_skip(lg, 25.0, cap)
-        lines.append(f"| {arm} | {len(good)} | {hz} (cap {cap}) | {n} | {over} | {skip} | {ticks} | {g25} | {g40} | {max(sizes, default=0)} | {sorted(sizes)[len(sizes) * 99 // 100] if sizes else 0} |")
+        lines.append(f"| {arm} | {len(good)} | {hz} (cap {cap}) | {n} | {over} | {skip} | {ticks} | {g25} | {g40} | {max(sizes, default=0)} | {sorted(sizes)[len(sizes) * 99 // 100] if sizes else 0} | {statistics.median(span) if span else 0:.1f} |")
     text = "\n".join(lines)
     (pathlib.Path(a.dir) / "table.md").write_text(text + "\n", encoding="utf-8")
     print(text)
