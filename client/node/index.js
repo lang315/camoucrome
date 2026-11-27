@@ -287,7 +287,7 @@ function profileSeeds(userDataDir) {
     // Written beside the target and renamed over it, so a crash mid-write never
     // leaves the damaged file the check above would refuse.
     const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
-    fs.writeFileSync(tmp, JSON.stringify(stored));
+    fs.writeFileSync(tmp, JSON.stringify(stored), { mode: 0o600 }); // owner-only, as Python's mkstemp and Go's CreateTemp
     fs.renameSync(tmp, file);
   }
   return Object.fromEntries(SEED_KEYS.map((k) => [k, stored[k]]));

@@ -467,6 +467,7 @@ def run_arm(arm, i, a, srv, st, out):
             pass
         if proc:
             subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+        launcher.remove_dir(udd)    # the launcher removes only a profile it made; this one is ours (513 left on the host, 2026-11-27)
         (out / f"{arm}-{i}.json").write_text(json.dumps(rec), encoding="utf-8")
 
 
