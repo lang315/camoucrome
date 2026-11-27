@@ -74,6 +74,14 @@ test('profile seeds are drawn once and read back', (t) => {
   assert.deepEqual(c.profileSeeds(profile), first);
 });
 
+// The seeds are identity: owner-only, as Python's mkstemp and Go's CreateTemp write them (2026-11-27: Node wrote 0644).
+test('profile seeds file is owner-only', { skip: process.platform === 'win32' }, (t) => {
+  const root = scratch();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  c.profileSeeds(root);
+  assert.equal(fs.statSync(path.join(root, CONTRACT.per_instance_seeds.profile_file)).mode & 0o777, 0o600);
+});
+
 // The file the Python and Go clients write must read the same here.
 test("profile seeds read another client's file and draw only the missing keys", (t) => {
   const dir = scratch();

@@ -121,6 +121,23 @@ class Report(unittest.TestCase):
         self.assertTrue(rec["unmeasured"].startswith("error:"), rec["unmeasured"])
         self.assertEqual(json.loads((d / "ctl125-0.json").read_text())["unmeasured"], rec["unmeasured"])
 
+    def test_run_arm_removes_its_profile(self):
+        """2026-11-27: 513 input-probe-* profiles were left in the host's %TEMP%; the run's own profile must go, a raised run included"""
+        d = pathlib.Path(tempfile.mkdtemp())
+        made, real = [], M.tempfile.mkdtemp
+        M.tempfile.mkdtemp = lambda **kw: made.append(real(**kw)) or made[-1]
+        srv, st = M.serve(d)
+        try:
+            class A:
+                stock_exe = fork_exe = "x"
+                fork_version = "157.0.8103.51"
+            M.run_arm("ctl125", 0, A, srv, st, d)
+        finally:
+            M.tempfile.mkdtemp = real
+            srv.shutdown()
+        self.assertEqual(len(made), 1)
+        self.assertFalse(os.path.exists(made[0]), made[0])
+
 
 class Browser(unittest.TestCase):
     def test_wrong_browser(self):
