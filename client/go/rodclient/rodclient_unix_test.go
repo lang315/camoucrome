@@ -4,6 +4,7 @@ package rodclient
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,8 +62,8 @@ func TestLaunchNewPageClose(t *testing.T) {
 	if len(owned) != 2 {
 		t.Fatalf("owned %v", owned)
 	}
-	inTemp(t, "crash dir", owned[0], "camoucrome-crash-")
-	inTemp(t, "profile dir", owned[1], "camoucrome-")
+	inTemp(t, "crash dir", owned[0], fmt.Sprintf("camoucrome-crash-%d-", os.Getpid()))
+	inTemp(t, "profile dir", owned[1], fmt.Sprintf("camoucrome-%d-", os.Getpid()))
 	if !contains(b.Argv(), "--user-data-dir="+owned[1]) {
 		t.Errorf("argv does not name the owned profile %s: %v", owned[1], b.Argv())
 	}

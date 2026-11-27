@@ -2,7 +2,8 @@
 // any driver library: the driver gets only a Conn.
 //
 // Promoted from client/go/spike (throwaway) into rodclient. Argv and env come
-// from camoucrome.BuildArgs / BuildEnv, so this package knows no identity logic.
+// from camoucrome.BuildArgs / BuildEnv, so this package knows no identity logic;
+// it names its temp profile and redacts its stderr tail through camoucrome.
 package browser
 
 import (
@@ -15,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/lang315/camoucrome/client/go"
 )
 
 type Proc struct {
@@ -30,13 +33,16 @@ type Proc struct {
 // Exited is closed once the process has been reaped.
 func (p *Proc) Exited() <-chan struct{} { return p.waited }
 
-// StderrTail is the last 4 KiB the browser wrote to stderr.
+// StderrTail is the last 4 KiB the browser wrote to stderr, whole lines only,
+// with the configured values redacted (camoucfg log lines print them).
 func (p *Proc) StderrTail() string { return p.tail.String() }
 
 // tailBuf keeps the last 4 KiB of stderr for error messages.
 type tailBuf struct {
-	mu sync.Mutex
-	b  []byte
+	mu  sync.Mutex
+	b   []byte
+	cut bool              // the start was dropped: the first line is partial
+	env map[string]string // the launch env: camoucrome.Redact takes its CAMOU_CONFIG* / CAMOU_PRESET* out
 }
 
 func (t *tailBuf) Write(p []byte) (int, error) {
@@ -45,6 +51,7 @@ func (t *tailBuf) Write(p []byte) (int, error) {
 	t.b = append(t.b, p...)
 	if len(t.b) > 4096 {
 		t.b = t.b[len(t.b)-4096:]
+		t.cut = true
 	}
 	return len(p), nil
 }
@@ -52,7 +59,11 @@ func (t *tailBuf) Write(p []byte) (int, error) {
 func (t *tailBuf) String() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return string(t.b)
+	s := string(t.b)
+	if t.cut { // a value cut in half would escape a whole-token match
+		_, s, _ = strings.Cut(s, "\n")
+	}
+	return camoucrome.Redact(s, t.env)
 }
 
 // Start launches exe with argv and exactly env (nothing is inherited). The
@@ -74,7 +85,7 @@ func Start(ctx context.Context, exe string, argv []string, env map[string]string
 	dir := ""
 	if !slices.ContainsFunc(argv, func(a string) bool { return strings.HasPrefix(a, "--user-data-dir=") }) {
 		var err error
-		if dir, err = os.MkdirTemp("", "camoucrome-"); err != nil {
+		if dir, err = camoucrome.MkdirTemp(""); err != nil {
 			return nil, err
 		}
 		argv = append(argv, "--user-data-dir="+dir)
@@ -91,7 +102,7 @@ func Start(ctx context.Context, exe string, argv []string, env map[string]string
 	}
 	cmd.WaitDelay = 2 * time.Second // a descendant holding stderr must not hang Wait
 	setGroup(cmd)
-	tail := &tailBuf{}
+	tail := &tailBuf{env: env}
 	cmd.Stderr = tail
 	cr, cw, err1 := os.Pipe()
 	pr, pw, err2 := os.Pipe()

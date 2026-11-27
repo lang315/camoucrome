@@ -13,8 +13,8 @@
 'use strict';
 const crypto = require('crypto');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
+const atrest = require('./atrest');
 const { pinned } = require('./pin');
 
 // Mirrors settings/launcher.json; test/launcher.test.js asserts it.
@@ -283,7 +283,7 @@ function profileSeeds(userDataDir) {
   if (missing.length) {
     const drawn = perInstanceConfig();
     for (const k of missing) stored[k] = drawn[k];
-    fs.mkdirSync(userDataDir, { recursive: true });
+    atrest.makedirs(userDataDir); // every dir it creates owner-only
     // Written beside the target and renamed over it, so a crash mid-write never
     // leaves the damaged file the check above would refuse.
     const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
@@ -345,9 +345,11 @@ async function launch(chromium, executablePath, {
   // Windows' file locks: the close event fires while the browser is still
   // writing its profile (measured 2026-10-03 with the Python client: one pass
   // left 3-193 files, a retry ~0.07 s later removed them). ~10 s at most.
-  const owned = [fs.mkdtempSync(path.join(os.tmpdir(), 'camoucrome-crash-'))];
-  const dir = userDataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'camoucrome-'));
+  atrest.sweep(userDataDir); // a killed client's leftovers; never the caller's profile
+  const owned = [atrest.mkdtemp('crash-')];
+  const dir = userDataDir || atrest.mkdtemp();
   if (!userDataDir) owned.push(dir);
+  let env = {}; // the launch env, kept for redacting the browser stderr out of a launch error
   // Never rejects, like Python's and Go's: a rejection from the close handler
   // would be unhandled (fatal to the caller), and in the catch below it would
   // replace the launch error. A directory still locked after ~10 s stays.
@@ -357,8 +359,7 @@ async function launch(chromium, executablePath, {
       executablePath: String(executablePath),
       headless,
       ignoreDefaultArgs: true,
-      env: buildEnv({ config, preset, strict, lax,
-        fontconfig: fontconfigFor({ config, preset, fontsDir, executablePath }), crashDir: owned[0] }),
+      env,
       args: buildArgs({ window, dpr, position, extra: args, headless, userDataDir: dir,
         acceptLang: acceptLangOf(config, preset), extensions, spkiList,
         proxyServer: proxy && proxy.server, proxyBypass: proxy && proxy.bypass, light }),
@@ -371,10 +372,12 @@ async function launch(chromium, executablePath, {
   const n = keys['navigator.hardwareConcurrency'];
   let ctx;
   try {
+    env = buildEnv({ config, preset, strict, lax,
+      fontconfig: fontconfigFor({ config, preset, fontsDir, executablePath }), crashDir: owned[0] });
     ctx = await (pinCpuCores && Number.isInteger(n) && n >= 1 ? pinned(n, start) : start());
   } catch (e) {
     await remove();
-    throw e;
+    throw atrest.redactError(e, env);
   }
   // Removed on the close event and again once close() resolves. The event
   // alone is too early on Linux: it fires while the browser is still shutting

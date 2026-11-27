@@ -97,7 +97,7 @@ func ProfileSeeds(userDataDir string, read func([]byte) (int, error)) (map[strin
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(userDataDir, 0o755); err != nil {
+	if err := os.MkdirAll(userDataDir, 0o700); err != nil { // every dir it creates owner-only
 		return nil, err
 	}
 	// Written beside the target and renamed over it, so a crash mid-write never

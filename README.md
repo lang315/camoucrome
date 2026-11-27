@@ -268,7 +268,8 @@ start instead of running with the real values. An incoherent or malformed (not J
 content_shell alike (fork PR #242; the `CHECK` stays only as a child-process backstop). Builds before -14 die on that `CHECK` instead for a malformed
 config (exit `0x80000003` on Windows, SIGABRT/SIGTRAP on Linux). Treat 13 as the refusal code. No client reads exit codes: under
 Playwright/patchright `launch` throws and the message carries the exit code, and with rodclient `Launch`
-succeeds and the first CDP call returns `EOF` plus the browser stderr tail, within about 2 s. `strict=True` is kept
+succeeds and the first CDP call returns `EOF` plus the browser stderr tail, within about 2 s. The configured values
+are redacted out of the browser stderr in both: the Playwright clients' launch error and rodclient's tail. `strict=True` is kept
 for compatibility and changes nothing. To opt out, pass `lax=True` (Python, Node) or `Lax: true` (Go
 `Options`, `core.LaunchOpts`; the probes take `--lax`): the variable is then left unset, also when the parent
 environment had one. Strict together with lax is an error. `CAMOU_CONFIG_STRICT=0` in your own environment is not an opt-out for the launchers: they overwrite it. A caller `env` option is refused (it would replace the whole child environment).
