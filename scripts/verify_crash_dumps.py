@@ -28,6 +28,12 @@ outside the profile and possibly uploaded). A row passes only if the crash is
 seen to happen AND no new dump file exists AND the marker is in no new file. A
 crash that did not happen is NOT MEASURED, never PASS.
 
+Not searched: WSL2's crash collector. Under WSL2 the kernel pipes a core dump of
+the crashed process to %TEMP%\\wsl-crashes on the Windows side, which a run inside
+WSL cannot see (interop off). That dump holds the environment, the marker included
+(2026-11-27, 5 and 17 hits on the CI box); the box now sets maxCrashDumpCount=-1,
+and the README lists it as a Known limit.
+
 RED is the same script against a build without the lever: dumps appear and
 hold the marker (Windows: as UTF-16LE).
 
