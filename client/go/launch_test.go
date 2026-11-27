@@ -17,10 +17,14 @@ type fakeLauncher struct {
 	opts playwright.BrowserTypeLaunchPersistentContextOptions
 	err  error
 	ctx  playwright.BrowserContext
+	hook func() // runs inside the launch call, while the launch's temp dirs exist
 }
 
 func (f *fakeLauncher) LaunchPersistentContext(dir string, o ...playwright.BrowserTypeLaunchPersistentContextOptions) (playwright.BrowserContext, error) {
 	f.dir, f.opts = dir, o[0]
+	if f.hook != nil {
+		f.hook()
+	}
 	return f.ctx, f.err
 }
 

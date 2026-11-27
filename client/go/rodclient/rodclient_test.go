@@ -3,6 +3,7 @@ package rodclient
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -24,10 +25,10 @@ func capture(t *testing.T) (exe *string, argv *[]string, env *map[string]string)
 	t.Cleanup(func() { startFn = old })
 	startFn = func(_ context.Context, e string, a []string, v map[string]string) (*browser.Proc, error) {
 		*exe, *argv, *env = e, a, v
-		inTemp(t, "crash dir", v[camoucrome.CrashDumpsEnv], "camoucrome-crash-")
+		inTemp(t, "crash dir", v[camoucrome.CrashDumpsEnv], fmt.Sprintf("camoucrome-crash-%d-", os.Getpid()))
 		for _, x := range a {
 			if d, ok := strings.CutPrefix(x, "--user-data-dir="); ok {
-				inTemp(t, "profile dir", d, "camoucrome-")
+				inTemp(t, "profile dir", d, fmt.Sprintf("camoucrome-%d-", os.Getpid()))
 			}
 		}
 		return nil, errStub

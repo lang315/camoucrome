@@ -84,7 +84,8 @@ func Launch(ctx context.Context, o camoucrome.Options, opts ...Option) (*Browser
 	if err != nil {
 		return nil, fmt.Errorf("rodclient: launch: %w", err)
 	}
-	crash, err := os.MkdirTemp("", "camoucrome-crash-")
+	camoucrome.Sweep(o.UserDataDir) // a killed client's leftovers; never the caller's profile
+	crash, err := camoucrome.MkdirTemp("crash-")
 	if err != nil {
 		return nil, fmt.Errorf("rodclient: launch: %w", err)
 	}
@@ -92,7 +93,7 @@ func Launch(ctx context.Context, o camoucrome.Options, opts ...Option) (*Browser
 	b := &Browser{owned: []string{crash}, sink: lc.observer}
 	if o.UserDataDir == "" {
 		// Set before BuildArgs so the argv carries it and Start owns no dir.
-		if o.UserDataDir, err = os.MkdirTemp("", "camoucrome-"); err != nil {
+		if o.UserDataDir, err = camoucrome.MkdirTemp(""); err != nil {
 			b.removeOwned()
 			return nil, fmt.Errorf("rodclient: launch: %w", err)
 		}

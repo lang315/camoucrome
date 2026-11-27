@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -38,7 +39,7 @@ while True:
             w.write(b"info:" + json.dumps({"argv": sys.argv[1:], "env": dict(os.environ)}, sort_keys=True).encode() + b"\0")
             continue
         if m == b"quit":
-            sys.stderr.write("fake: bye-tail\n"); sys.stderr.flush(); sys.exit(3)
+            sys.stderr.write("fake: bye-tail\n" + os.environ.get("FAKE_STDERR", "")); sys.stderr.flush(); sys.exit(3)
         w.write(b"echo:" + m + b"\0")
 `
 
@@ -101,9 +102,36 @@ func TestStartEOFCarriesStderrTail(t *testing.T) {
 	}
 }
 
+func TestStartTailHasTheConfiguredValuesRedacted(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not on PATH")
+	}
+	exe := filepath.Join(t.TempDir(), "fake-browser")
+	if err := os.WriteFile(exe, []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"PATH": os.Getenv("PATH"), "CAMOU_CONFIG": `{"timezone:id":"Asia/Secretville"}`,
+		"FAKE_STDERR": "[1:1:WARNING:tz.cc(1)] camoucfg: timezone:id 'Asia/Secretville' invalid; falling back to UTC\n"}
+	p, err := Start(context.Background(), exe, []string{"--remote-debugging-pipe"}, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Stop)
+	_ = p.Conn.Send([]byte("quit"))
+	_, err = p.Conn.Read()
+	for name, text := range map[string]string{"EOF error": err.Error(), "StderrTail": p.StderrTail()} {
+		if strings.Contains(text, "Secretville") || !strings.Contains(text, "timezone:id '<redacted>' invalid") {
+			t.Errorf("%s not redacted: %q", name, text)
+		}
+	}
+}
+
 func TestStopIdempotentAndCleans(t *testing.T) {
 	p := start(t, context.Background())
 	dir := profile(p)
+	if want := fmt.Sprintf("camoucrome-%d-", os.Getpid()); !strings.HasPrefix(filepath.Base(dir), want) {
+		t.Errorf("fallback profile %s is not named %s* for the sweep", filepath.Base(dir), want)
+	}
 	p.Stop()
 	if _, err := os.Stat(dir); !os.IsNotExist(err) || !gone(p.Pid) {
 		t.Fatalf("profile stat %v, gone=%v", err, gone(p.Pid))

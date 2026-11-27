@@ -4,10 +4,9 @@ import json
 import os
 import shutil
 import sys
-import tempfile
 import time
 
-from . import pin
+from . import atrest, pin
 
 # Mirrors settings/launcher.json "forbidden_context_options"; tests/test_launcher.py
 # asserts the two agree. Each of these duplicates a CAMOU_CONFIG key: a second
@@ -363,24 +362,28 @@ def launch(playwright, executable_path, *, config=None, preset=None,
     if keys.get("geolocation:latitude") is not None and keys.get("geolocation:longitude") is not None:
         perms = list(options.get("permissions") or [])
         options["permissions"] = perms + ["geolocation"] * ("geolocation" not in perms)
-    owned = [tempfile.mkdtemp(prefix="camoucrome-crash-")]
+    atrest.sweep(keep=user_data_dir)  # a killed client's leftovers; never the caller's profile
+    owned = [atrest.mkdtemp("crash-")]
     if user_data_dir is None:
-        user_data_dir = tempfile.mkdtemp(prefix="camoucrome-")
+        user_data_dir = atrest.mkdtemp()
         owned.append(user_data_dir)
+    env = {}  # the launch env, kept for redacting the browser stderr out of a launch error
 
     def remove(*_):
         for d in owned:
             remove_dir(d)
     try:
+        env.update(build_env(config, preset, strict, lax=lax,
+                             fontconfig=fontconfig_for(config, preset, fonts_dir, executable_path),
+                             crash_dir=owned[0]))
+
         def start():
             return playwright.chromium.launch_persistent_context(
                 user_data_dir,
                 executable_path=str(executable_path),
                 headless=headless,
                 ignore_default_args=True,
-                env=build_env(config, preset, strict, lax=lax,
-                              fontconfig=fontconfig_for(config, preset, fonts_dir, executable_path),
-                              crash_dir=owned[0]),
+                env=env,
                 args=build_args(window, dpr, args, headless, user_data_dir,
                                 accept_lang_of(config, preset), extensions, spki_list,
                                 proxy["server"] if proxy else None, proxy.get("bypass") if proxy else None, position, light=light),
@@ -396,17 +399,17 @@ def launch(playwright, executable_path, *, config=None, preset=None,
             ctx = pin.apply_async(playwright, n, start)
         else:
             ctx = pin.apply(playwright, n, start)
-    except BaseException:
+    except BaseException as e:
         remove()
-        raise
+        raise atrest.redact_error(e, env)
     # What the launch owns lives as long as the context, including a failed async launch.
     if inspect.isawaitable(ctx):
         async def started():
             try:
                 c = await ctx
-            except BaseException:
+            except BaseException as e:
                 remove()
-                raise
+                raise atrest.redact_error(e, env)
             return removed_on_close(c, remove)
         return started()
     return removed_on_close(ctx, remove)

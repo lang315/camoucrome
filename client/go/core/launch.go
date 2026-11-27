@@ -132,7 +132,9 @@ func envFor(r Resolved, o LaunchOpts, base []string, host string) ([]string, fun
 			return nil, noop, fmt.Errorf("%s claim on a Linux host needs the bundled fonts dir (LaunchOpts.FontsDir), but none was given", claimed)
 		}
 	}
-	crash, err := os.MkdirTemp("", "camoucrome-crash-")
+	sweep(o.UserDataDir) // a killed client's leftovers; never the caller's profile
+	// Named for this process so sweep() can tell a live client's dir; 0700.
+	crash, err := os.MkdirTemp("", fmt.Sprintf("camoucrome-crash-%d-", os.Getpid()))
 	if err != nil {
 		return nil, noop, err
 	}

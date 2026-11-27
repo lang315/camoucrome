@@ -549,7 +549,8 @@ func launch(bt persistentLauncher, o Options) (playwright.BrowserContext, error)
 	if err != nil {
 		return nil, err
 	}
-	crash, err := os.MkdirTemp("", "camoucrome-crash-")
+	Sweep(o.UserDataDir) // a killed client's leftovers; never the caller's profile
+	crash, err := MkdirTemp("crash-")
 	if err != nil {
 		return nil, err
 	}
@@ -561,7 +562,7 @@ func launch(bt persistentLauncher, o Options) (playwright.BrowserContext, error)
 		}
 	}
 	if o.UserDataDir == "" {
-		if o.UserDataDir, err = os.MkdirTemp("", "camoucrome-"); err != nil {
+		if o.UserDataDir, err = MkdirTemp(""); err != nil {
 			remove()
 			return nil, err
 		}
@@ -598,7 +599,7 @@ func launch(bt persistentLauncher, o Options) (playwright.BrowserContext, error)
 	}
 	if err != nil {
 		remove()
-		return nil, err
+		return nil, redactErr(err, env) // the driver's error carries the browser's stderr
 	}
 	ctx.OnClose(func(playwright.BrowserContext) { remove() })
 	return closingContext{ctx, remove}, nil

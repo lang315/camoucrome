@@ -7,6 +7,8 @@ import os
 import random
 import tempfile
 
+from . import atrest
+
 # Mirrors settings/launcher.json "per_instance_seeds"; the test asserts it.
 SEED_KEYS = ("canvas:seed", "mediaDevices:seed")
 SEEDS_FILE = "camoucrome-seeds.json"
@@ -54,7 +56,7 @@ def profile_seeds(user_data_dir, rng=None):
     if missing:
         drawn = per_instance_config(rng)
         stored.update({k: drawn[k] for k in missing})
-        os.makedirs(user_data_dir, exist_ok=True)
+        atrest.makedirs(user_data_dir)  # every dir it creates owner-only
         # Written beside the target and renamed over it, so a crash mid-write
         # never leaves the damaged file the check above would refuse.
         fd, tmp = tempfile.mkstemp(dir=user_data_dir, prefix=SEEDS_FILE + ".")

@@ -45,3 +45,14 @@ func TestConnSend(t *testing.T) {
 		t.Fatal("NUL inside a message must be refused")
 	}
 }
+
+func TestTailDropsAPartialFirstLineAndRedacts(t *testing.T) {
+	tb := &tailBuf{env: map[string]string{"CAMOU_CONFIG": `{"timezone:id":"Asia/Secretville"}`}}
+	// The 4 KiB cut lands inside the value: "ecretville" would survive a whole-token match.
+	tb.Write([]byte(strings.Repeat("p", 100) + " Asia/Secretville\n"))
+	tb.Write([]byte(strings.Repeat("y", 4096-len("ecretville\n")-len("z Asia/Secretville\n")) + "z Asia/Secretville\n"))
+	got := tb.String()
+	if strings.Contains(got, "ecretville") || !strings.HasPrefix(got, "yyy") || !strings.HasSuffix(got, "z <redacted>\n") {
+		t.Errorf("tail %q", got[:20]+"..."+got[len(got)-30:])
+	}
+}
