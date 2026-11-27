@@ -216,7 +216,7 @@ func chain(err error) []error {
 }
 
 func TestRedactedErrorKeepsErrorsIsAndHidesTheRawTextBelowIt(t *testing.T) {
-	env, err := BuildEnv(Options{Config: atConfig, Preset: atPreset}, nil)
+	env, err := buildEnvFor(Options{Config: atConfig, Preset: atPreset}, nil, "Windows") // host pinned: a Windows claim on Linux needs fonts
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func leaked(text string, secrets []string) []string {
 func TestLaunchErrorHasTheConfiguredValuesRedactedLineByLine(t *testing.T) {
 	useTempRoot(t, t.TempDir())
 	o := Options{ExecutablePath: "/x/chrome", Config: atConfig, Preset: atPreset}
-	env, err := BuildEnv(o, nil)
+	env, err := buildEnvFor(o, nil, "Windows")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,8 +297,8 @@ func TestLaunchErrorHasTheConfiguredValuesRedactedLineByLine(t *testing.T) {
 }
 
 func TestRedactDropsChunkedConfigAndPresetStrings(t *testing.T) {
-	env, err := BuildEnv(Options{Config: map[string]any{"k:big": strings.Repeat("Q", 70000)},
-		Preset: map[string]any{"os": "Windows", "pad": strings.Repeat("P", 70000)}}, nil)
+	env, err := buildEnvFor(Options{Config: map[string]any{"k:big": strings.Repeat("Q", 70000)},
+		Preset: map[string]any{"os": "Windows", "pad": strings.Repeat("P", 70000)}}, nil, "Windows")
 	if err != nil {
 		t.Fatal(err)
 	}

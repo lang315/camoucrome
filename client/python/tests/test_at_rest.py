@@ -229,7 +229,7 @@ def test_launch_error_has_the_configured_values_redacted_line_by_line(monkeypatc
     env = camoucrome.build_env(CONFIG, PRESET)
     with pytest.raises(PlaywrightError) as info:
         camoucrome.launch(pw(PlaywrightError(STDERR + "\n" + env["CAMOU_CONFIG"])), "/x/chrome",
-                          config=CONFIG, preset=PRESET)
+                          config=CONFIG, preset=PRESET, pin_cpu_cores=False)  # a fake driver has no pid to pin
     e = info.value
     for text in (str(e), e.message, e._stack):
         assert [s for s in SECRETS + [env["CAMOU_CONFIG"]] if s in text] == []
