@@ -4,6 +4,7 @@ package camoucrome
 // audit's three client-side holes). Mirrors client/python/tests/test_at_rest.py.
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -28,6 +29,13 @@ func mode(t *testing.T, p string) os.FileMode {
 		t.Fatal(err)
 	}
 	return fi.Mode().Perm()
+}
+
+// useTempRoot points os.TempDir at root: TMPDIR on POSIX, TMP on Windows (TEMP for any reader of it).
+func useTempRoot(t *testing.T, root string) {
+	for _, k := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(k, root)
+	}
 }
 
 func withUmask022(t *testing.T) {
@@ -67,7 +75,7 @@ func TestProfileSeedsLeavesAnExistingDirModeAlone(t *testing.T) {
 }
 
 func TestLaunchTempDirsAreOwnerOnlyAndCarryTheClientPid(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	useTempRoot(t, t.TempDir())
 	f := &fakeLauncher{err: errors.New("stop here")}
 	var dirs []string
 	f.hook = func() {
@@ -114,7 +122,7 @@ func made(t *testing.T, root, name string, age time.Duration, lockPid int) strin
 
 func TestLaunchSweepsOnlyADeadClientsOldTempDirs(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("TMPDIR", root)
+	useTempRoot(t, root)
 	dead, me, old := deadPid(t), os.Getpid(), 2*time.Hour
 	gone := []string{made(t, root, fmt.Sprintf("camoucrome-%d-1234", dead), old, 0),
 		made(t, root, fmt.Sprintf("camoucrome-crash-%d-1234", dead), old, 0)}
@@ -151,6 +159,88 @@ func TestLaunchSweepsOnlyADeadClientsOldTempDirs(t *testing.T) {
 	}
 }
 
+func TestSweepSparesTheCallersDirHoweverItIsSpelled(t *testing.T) {
+	if !posix {
+		t.Skip("symlinks")
+	}
+	root := t.TempDir()
+	useTempRoot(t, root)
+	alias := filepath.Join(t.TempDir(), "alias") // another spelling of the temp root (/var vs /private/var)
+	if err := os.Symlink(root, alias); err != nil {
+		t.Fatal(err)
+	}
+	dead := deadPid(t)
+	for _, c := range []struct{ name, below string }{{"caller", ""}, {"outer", "profile"}, {"unborn", "not/yet"}} {
+		d := made(t, root, fmt.Sprintf("camoucrome-%d-%s", dead, c.name), 2*time.Hour, 0)
+		if c.name == "outer" { // the caller's dir inside a candidate
+			os.Mkdir(filepath.Join(d, "profile"), 0o700)
+			tm := time.Now().Add(-2 * time.Hour) // the child's mkdir made it young
+			os.Chtimes(d, tm, tm)
+		}
+		Sweep(filepath.Join(alias, filepath.Base(d), c.below)) // "unborn": not created yet, the sweep runs first
+		if _, err := os.Stat(filepath.Join(d, "Preferences")); err != nil {
+			t.Errorf("%s swept", c.name)
+		}
+	}
+}
+
+func TestSweepRemovesNothingWhenTheCallersDirCannotBeResolved(t *testing.T) {
+	if !posix {
+		t.Skip("symlinks")
+	}
+	root := t.TempDir()
+	useTempRoot(t, root)
+	stale := made(t, root, fmt.Sprintf("camoucrome-%d-1234", deadPid(t)), 2*time.Hour, 0)
+	os.Symlink("loop", filepath.Join(root, "loop")) // ELOOP: neither found nor missing
+	Sweep(filepath.Join(root, "loop", "profile"))
+	if _, err := os.Stat(stale); err != nil {
+		t.Error("swept on doubt")
+	}
+}
+
+// chain is err and every error below it, through both Unwrap forms.
+func chain(err error) []error {
+	if err == nil {
+		return nil
+	}
+	out := []error{err}
+	switch u := err.(type) {
+	case interface{ Unwrap() error }:
+		out = append(out, chain(u.Unwrap())...)
+	case interface{ Unwrap() []error }:
+		for _, e := range u.Unwrap() {
+			out = append(out, chain(e)...)
+		}
+	}
+	return out
+}
+
+func TestRedactedErrorKeepsErrorsIsAndHidesTheRawTextBelowIt(t *testing.T) {
+	env, err := BuildEnv(Options{Config: atConfig, Preset: atPreset}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pwErr := &playwright.Error{Message: atStderr}
+	for name, e := range map[string]error{
+		"deadline": fmt.Errorf("could not launch: %s: %w", atStderr, context.DeadlineExceeded),
+		"driver":   fmt.Errorf("could not launch: %w", pwErr),
+	} {
+		r := redactErr(e, env)
+		if name == "deadline" && !errors.Is(r, context.DeadlineExceeded) {
+			t.Errorf("%s: errors.Is(context.DeadlineExceeded) lost", name)
+		}
+		var as *playwright.Error
+		if name == "driver" && (!errors.Is(r, pwErr) || !errors.As(r, &as) || as != pwErr) {
+			t.Errorf("%s: the driver's error is no longer reachable", name)
+		}
+		for _, c := range chain(r) {
+			if l := leaked(c.Error(), atSecrets); len(l) != 0 {
+				t.Errorf("%s: %T in the chain leaks %q", name, c, l)
+			}
+		}
+	}
+}
+
 // 3. Browser stderr in the launch error.
 
 var (
@@ -181,7 +271,7 @@ func leaked(text string, secrets []string) []string {
 }
 
 func TestLaunchErrorHasTheConfiguredValuesRedactedLineByLine(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	useTempRoot(t, t.TempDir())
 	o := Options{ExecutablePath: "/x/chrome", Config: atConfig, Preset: atPreset}
 	env, err := BuildEnv(o, nil)
 	if err != nil {

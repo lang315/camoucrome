@@ -8,14 +8,52 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestEnvNamesTheCrashDirForThisProcessAndSweepsADeadClients(t *testing.T) {
+func TestSweepSparesTheCallersDirHoweverItIsSpelled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks")
+	}
 	root := t.TempDir()
 	t.Setenv("TMPDIR", root)
+	alias := filepath.Join(t.TempDir(), "alias") // another spelling of the temp root (/var vs /private/var)
+	if err := os.Symlink(root, alias); err != nil {
+		t.Fatal(err)
+	}
+	c := exec.Command(os.Args[0], "-test.run=^$")
+	if err := c.Run(); err != nil {
+		t.Fatal(err)
+	}
+	dead := c.Process.Pid
+	old := time.Now().Add(-2 * time.Hour)
+	for _, k := range []struct{ name, below string }{{"caller", ""}, {"outer", "profile"}, {"unborn", "not/yet"}, {"loop", ""}} {
+		d := filepath.Join(root, fmt.Sprintf("camoucrome-%d-%s", dead, k.name))
+		os.Mkdir(d, 0o700)
+		keep := filepath.Join(alias, filepath.Base(d), k.below)
+		switch k.name {
+		case "outer": // the caller's dir inside a candidate
+			os.Mkdir(filepath.Join(d, "profile"), 0o700)
+		case "loop": // ELOOP: neither found nor missing, so nothing is swept
+			os.Symlink("loop", filepath.Join(root, "loop"))
+			keep = filepath.Join(root, "loop", "profile")
+		}
+		os.Chtimes(d, old, old)
+		sweep(keep) // "unborn": not created yet, the sweep runs first
+		if _, err := os.Stat(d); err != nil {
+			t.Errorf("%s swept", k.name)
+		}
+	}
+}
+
+func TestEnvNamesTheCrashDirForThisProcessAndSweepsADeadClients(t *testing.T) {
+	root := t.TempDir()
+	for _, k := range []string{"TMPDIR", "TMP", "TEMP"} { // os.TempDir: TMPDIR on POSIX, TMP on Windows
+		t.Setenv(k, root)
+	}
 	c := exec.Command(os.Args[0], "-test.run=^$")
 	if err := c.Run(); err != nil { // reaped: the pid names no process
 		t.Fatal(err)

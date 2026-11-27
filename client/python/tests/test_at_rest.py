@@ -134,6 +134,60 @@ def test_sweep_ignores_a_failure_to_remove(tmp_path, monkeypatch):
     camoucrome.launch(pw(), "/x/chrome")  # no raise
 
 
+def age(d, seconds=7200.0):
+    t = time.time() - seconds
+    os.utime(d, (t, t))
+
+
+@posix
+def test_sweep_spares_the_callers_dir_however_it_is_spelled(tmp_path):
+    dead = dead_pid()
+    alias = tmp_path.parent / f"{tmp_path.name}-alias"  # another spelling of the temp root (/var vs /private/var)
+    os.symlink(tmp_path, alias)
+    try:
+        swept = []
+        for case, below in (("caller", ()), ("outer", ("profile",)), ("unborn", ("not", "yet"))):
+            d = made(tmp_path, f"camoucrome-{dead}-{case}")
+            if case == "outer":  # the caller's dir inside a candidate
+                (d / "profile").mkdir()
+                age(d)  # the child's mkdir made it young
+            atrest.sweep(keep=str(alias.joinpath(d.name, *below)))  # "unborn": not created yet, the sweep runs first
+            swept += [case] * (not (d / "Preferences").exists())
+        assert swept == []
+    finally:
+        os.unlink(alias)
+
+
+@posix
+def test_sweep_removes_nothing_when_the_callers_dir_cannot_be_resolved(tmp_path):
+    stale = made(tmp_path, f"camoucrome-{dead_pid()}-abcd1234")
+    os.symlink("loop", tmp_path / "loop")  # ELOOP: neither found nor missing
+    atrest.sweep(keep=str(tmp_path / "loop" / "profile"))
+    assert stale.exists()
+
+
+def test_alive_declares_the_win32_signatures(monkeypatch):
+    import ctypes
+    import ctypes.wintypes as w
+
+    class Fn:
+        def __init__(self, ret):
+            self.ret = ret
+
+        def __call__(self, *a):
+            return self.ret
+
+    fns = {"OpenProcess": Fn(1), "GetExitCodeProcess": Fn(1), "CloseHandle": Fn(1)}
+    k = type("K", (), fns)()
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *a, **kw: k, raising=False)
+    atrest._alive(1234)
+    sigs = {n: (getattr(f, "argtypes", None), getattr(f, "restype", None)) for n, f in fns.items()}
+    assert sigs == {"OpenProcess": ([w.DWORD, w.BOOL, w.DWORD], w.HANDLE),
+                    "GetExitCodeProcess": ([w.HANDLE, w.LPDWORD], w.BOOL),
+                    "CloseHandle": ([w.HANDLE], w.BOOL)}
+
+
 # 3. Browser stderr in the launch error.
 
 class PlaywrightError(Exception):
@@ -170,7 +224,8 @@ KEPT = ["invariant 'inv-1' violated", "but 'x.y' is not", "camoucfg: 'ua:osInfo'
         "'navigator.hardwareConcurrency' is '<redacted>', out of range", "coherence_validator.cc(743)"]  # public names stay
 
 
-def test_launch_error_has_the_configured_values_redacted_line_by_line():
+def test_launch_error_has_the_configured_values_redacted_line_by_line(monkeypatch):
+    monkeypatch.setattr(camoucrome.launcher, "HOST_OS", "Windows")  # the claim's own host: no bundled fonts dir needed
     env = camoucrome.build_env(CONFIG, PRESET)
     with pytest.raises(PlaywrightError) as info:
         camoucrome.launch(pw(PlaywrightError(STDERR + "\n" + env["CAMOU_CONFIG"])), "/x/chrome",

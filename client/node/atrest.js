@@ -58,16 +58,45 @@ function browserRunning(dir) {
   return !/^[0-9]+$/.test(pid) || alive(Number(pid));
 }
 
+// keep, resolved, and every dir above it as dev:ino, so sweep() spares a
+// candidate that is the caller's dir or holds it however either is spelled (a
+// symlink, /var vs /private/var, an 8.3 name, case). keep may not exist yet:
+// its deepest existing ancestor stands in. null on any doubt.
+function protectedIds(keep) {
+  let p = path.resolve(keep);
+  for (;;) {
+    try {
+      fs.statSync(p);
+      break;
+    } catch (e) {
+      if (e.code !== 'ENOENT' || path.dirname(p) === p) return null;
+      p = path.dirname(p);
+    }
+  }
+  const ids = new Set();
+  try {
+    for (p = fs.realpathSync.native(p); ; p = path.dirname(p)) {
+      ids.add(identity(fs.statSync(p, { bigint: true })));
+      if (path.dirname(p) === p) return ids;
+    }
+  } catch {
+    return null;
+  }
+}
+
+const identity = (st) => `${st.dev}:${st.ino}`; // bigint stats: a Windows file index outgrows a double
+
 // Removes the temp profiles and crash dirs a killed client left (a profile
 // holds Preferences with the identity's languages; a crash dir, minidumps with
 // CAMOU_CONFIG). Only this client family's names; never `keep` (the caller's
-// profile). Liveness: the client's pid is in the name, so one kill(0) per
+// profile) or a dir that holds it. Liveness: the client's pid is in the name, so one kill(0) per
 // candidate, no file to open, and a pid that names any live process keeps the
 // dir; a profile is kept too while its SingletonLock / lockfile says a browser
 // outlived the client. Failures are ignored.
 function sweep(keep) {
   const root = os.tmpdir();
-  const kept = keep ? path.resolve(keep) : null;
+  const spared = keep ? protectedIds(keep) : new Set();
+  if (!spared) return; // never delete on doubt
   let names;
   try {
     names = fs.readdirSync(root);
@@ -77,11 +106,11 @@ function sweep(keep) {
   for (const name of names) {
     const m = OWNED.exec(name);
     const dir = path.join(root, name);
-    if (!m || dir === kept) continue;
+    if (!m) continue;
     try {
-      const st = fs.lstatSync(dir);
-      if (!st.isDirectory() || Date.now() - st.mtimeMs < STALE_AFTER_MS
-          || (process.getuid && st.uid !== process.getuid())
+      const st = fs.lstatSync(dir, { bigint: true });
+      if (!st.isDirectory() || spared.has(identity(st)) || Date.now() - Number(st.mtimeMs) < STALE_AFTER_MS
+          || (process.getuid && Number(st.uid) !== process.getuid())
           || alive(Number(m[1])) || browserRunning(dir)) continue;
       fs.rmSync(dir, { recursive: true, force: true }); // one pass: a locked dir must not stall the launch
     } catch {

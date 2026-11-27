@@ -94,6 +94,35 @@ test('a failure to remove is ignored', async (t) => {
   await camoucrome.launch(chromium(), '/x/chrome'); // no throw
 });
 
+test('sweep spares the caller\'s dir however it is spelled', { skip: !posix }, () => {
+  const dead = deadPid();
+  const alias = path.join(fs.mkdtempSync(path.join(path.dirname(root), 'camou-alias-')), 'alias');
+  fs.symlinkSync(root, alias); // another spelling of the temp root (/var vs /private/var)
+  try {
+    const swept = [];
+    for (const [name, below] of [['caller', []], ['outer', ['profile']], ['unborn', ['not', 'yet']]]) {
+      const d = made(`camoucrome-${dead}-${name}`);
+      if (name === 'outer') { // the caller's dir inside a candidate
+        fs.mkdirSync(path.join(d, 'profile'));
+        const t = Date.now() / 1000 - 7200; // the child's mkdir made it young
+        fs.utimesSync(d, t, t);
+      }
+      atrest.sweep(path.join(alias, path.basename(d), ...below)); // 'unborn': not created yet, the sweep runs first
+      if (!fs.existsSync(path.join(d, 'Preferences'))) swept.push(name);
+    }
+    assert.deepStrictEqual(swept, []);
+  } finally {
+    fs.rmSync(path.dirname(alias), { recursive: true, force: true });
+  }
+});
+
+test('sweep removes nothing when the caller\'s dir cannot be resolved', { skip: !posix }, () => {
+  const stale = made(`camoucrome-${deadPid()}-unresolved`);
+  fs.symlinkSync('loop', path.join(root, 'loop')); // ELOOP: neither found nor missing
+  atrest.sweep(path.join(root, 'loop', 'profile'));
+  assert.ok(fs.existsSync(stale));
+});
+
 // 3. Browser stderr in the launch error.
 
 const CONFIG = { 'navigator.platform': 'Win32', 'timezone:id': 'Asia/Secretville',

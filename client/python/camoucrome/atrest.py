@@ -44,11 +44,15 @@ def mkdtemp(kind=""):
 def _alive(pid):
     if sys.platform == "win32":
         import ctypes
+        from ctypes import wintypes as w
         k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.OpenProcess.argtypes, k.OpenProcess.restype = [w.DWORD, w.BOOL, w.DWORD], w.HANDLE
+        k.GetExitCodeProcess.argtypes, k.GetExitCodeProcess.restype = [w.HANDLE, w.LPDWORD], w.BOOL
+        k.CloseHandle.argtypes, k.CloseHandle.restype = [w.HANDLE], w.BOOL
         h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
         if not h:
             return ctypes.get_last_error() != 87  # ERROR_INVALID_PARAMETER: no such process; anything else keeps
-        code = ctypes.c_ulong()
+        code = w.DWORD()
         ok = k.GetExitCodeProcess(h, ctypes.byref(code))
         k.CloseHandle(h)
         return not ok or code.value == 259  # STILL_ACTIVE
@@ -79,14 +83,43 @@ def _browser_running(d):
     return not pid.isdigit() or _alive(int(pid))
 
 
+def _protected(keep):
+    """The (st_dev, st_ino) of keep, resolved, and of every dir above it, so sweep() spares a candidate that is
+    the caller's dir or holds it however either is spelled (a symlink, /var vs /private/var, an 8.3 name, case).
+    keep may not exist yet: its deepest existing ancestor stands in. None on any doubt."""
+    p = os.path.abspath(keep)
+    while True:
+        try:
+            os.stat(p)
+            break
+        except FileNotFoundError:
+            if os.path.dirname(p) == p:
+                return None
+            p = os.path.dirname(p)
+        except OSError:
+            return None
+    p, ids = os.path.realpath(p), set()
+    while True:
+        try:
+            st = os.stat(p)
+        except OSError:
+            return None
+        ids.add((st.st_dev, st.st_ino))
+        if os.path.dirname(p) == p:
+            return ids
+        p = os.path.dirname(p)
+
+
 def sweep(keep=None):
     """Removes the temp profiles and crash dirs a killed client left (a profile holds Preferences with the
     identity's languages; a crash dir, minidumps with CAMOU_CONFIG). Only this client family's names; never
-    `keep` (the caller's profile). Liveness: the client's pid is in the name, so one kill(0) / OpenProcess per
+    `keep` (the caller's profile) or a dir that holds it. Liveness: the client's pid is in the name, so one kill(0) / OpenProcess per
     candidate, no file to open, and a pid that names any live process keeps the dir; a profile is kept too while
     its SingletonLock / lockfile says a browser outlived the client. Failures are ignored."""
     root = tempfile.gettempdir()
-    keep = os.path.abspath(keep) if keep else None
+    spared = _protected(keep) if keep else set()
+    if spared is None:
+        return  # never delete on doubt
     now = time.time()
     try:
         names = os.listdir(root)
@@ -95,11 +128,12 @@ def sweep(keep=None):
     for name in names:
         m = _OWNED.match(name)
         d = os.path.join(root, name)
-        if not m or d == keep:
+        if not m:
             continue
         try:
             st = os.lstat(d)
-            if (not os.path.isdir(d) or os.path.islink(d) or now - st.st_mtime < STALE_AFTER
+            if (not os.path.isdir(d) or os.path.islink(d) or (st.st_dev, st.st_ino) in spared
+                    or now - st.st_mtime < STALE_AFTER
                     or (hasattr(os, "getuid") and st.st_uid != os.getuid())
                     or _alive(int(m.group(1))) or _browser_running(d)):
                 continue
