@@ -149,7 +149,14 @@ const KEPT = ["invariant 'inv-1' violated", "but 'x.y' is not", "camoucfg: 'ua:o
 test('the launch error has the configured values redacted, line by line', async () => {
   const env = camoucrome.buildEnv({ config: CONFIG, preset: PRESET });
   const err = new Error(STDERR + '\n' + env.CAMOU_CONFIG);
-  await assert.rejects(camoucrome.launch(chromium(err), '/x/chrome', { config: CONFIG, preset: PRESET }), (e) => {
+  // A Windows claim on a Linux host needs a fonts dir with its fontconfig beside it: give one, so the launch reaches the driver.
+  const fontsRoot = fs.mkdtempSync(path.join(root, 'fonts-'));
+  fs.mkdirSync(path.join(fontsRoot, 'fonts'));
+  const conf = path.resolve(fontsRoot, camoucrome.FONTCONFIG_FILES.Windows);
+  fs.mkdirSync(path.dirname(conf), { recursive: true });
+  fs.writeFileSync(conf, '<fontconfig/>');
+  const opts = { config: CONFIG, preset: PRESET, fontsDir: path.join(fontsRoot, 'fonts'), pinCpuCores: false }; // fake driver: no pid to pin
+  await assert.rejects(camoucrome.launch(chromium(err), '/x/chrome', opts), (e) => {
     assert.strictEqual(e, err); // the driver's own error object
     for (const text of [e.message, e.stack]) {
       assert.deepStrictEqual([...SECRETS, env.CAMOU_CONFIG].filter((s) => text.includes(s)), []);
