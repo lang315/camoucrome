@@ -272,7 +272,11 @@ func leaked(text string, secrets []string) []string {
 
 func TestLaunchErrorHasTheConfiguredValuesRedactedLineByLine(t *testing.T) {
 	useTempRoot(t, t.TempDir())
-	o := Options{ExecutablePath: "/x/chrome", Config: atConfig, Preset: atPreset}
+	old := hostOS
+	hostOS = "Windows" // the claim's own host: launch() must not stop at the Linux fonts-dir check
+	t.Cleanup(func() { hostOS = old })
+	noPin := false // a fake driver has no pid to pin, and the box has more CPUs than the claim
+	o := Options{ExecutablePath: "/x/chrome", Config: atConfig, Preset: atPreset, PinCPUCores: &noPin}
 	env, err := buildEnvFor(o, nil, "Windows")
 	if err != nil {
 		t.Fatal(err)
