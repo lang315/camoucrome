@@ -474,7 +474,11 @@ of the session and are lower bounds; the netlog's requests are still complete.
 "Page requests by scheme" counts the requests the page's renderer issued
 (`ResourceFetcher::requestResource`, trace category `blink.resource`, which
 `recon.ps1` records since 2026-11-27), by URL scheme; the main document is
-not one of them. Its extension table lists each `chrome-extension://`,
+not one of them. A renderer that issued `chrome://` requests and nothing
+but `chrome:`, `data:` or `blob:` is the browser's own WebUI (on
+2026-11-27 the omnibox popup, 27 `chrome://` requests), not the page: the
+report leaves it out and prints how many renderers and requests it left
+out. Its extension table lists each `chrome-extension://`,
 `moz-extension://` or `safari-web-extension://` id a page requested, with the
 request count and the number of distinct paths: this is how extension
 probing shows. The netlog and the observe category never see these requests,

@@ -717,24 +717,34 @@ def _request_category_on(data):
 def page_requests(data):
     """Renderer requests by scheme, from ResourceFetcher::requestResource (blink.resource). The netlog and the
     observe category never see a page's chrome-extension:// requests (the renderer fails them first); this event
-    keeps the id and path. Returns {"schemes": {scheme: n}, "extensions": {(scheme, id): (n, distinct paths)}},
+    keeps the id and path. A renderer that issued chrome:// requests and nothing but chrome:, data: or blob: is
+    the browser's own WebUI (the omnibox popup, 2026-11-27), not the page, and is left out. Returns
+    {"schemes": {scheme: n}, "extensions": {(scheme, id): (n, distinct paths)}, "ui": (renderers, requests)},
     or None when the trace did not record the category."""
     if not _request_category_on(data):
         return None
-    schemes, ext, paths = collections.Counter(), collections.Counter(), collections.defaultdict(set)
+    rows = []
     for e in all_events(data):
         url = (e.get("args") or {}).get("url") if e.get("name") == REQUEST_EVENT else None
         m = _SCHEME.match(url or "")
-        if not m:
+        if m:
+            rows.append((e.get("pid"), m.group(1).lower(), url, m))
+    by_pid = collections.defaultdict(set)
+    for pid, scheme, _, _ in rows:
+        by_pid[pid].add(scheme)
+    ui = {pid for pid, s in by_pid.items() if "chrome" in s and s <= {"chrome", "data", "blob"}}
+    schemes, ext, paths = collections.Counter(), collections.Counter(), collections.defaultdict(set)
+    for pid, scheme, url, m in rows:
+        if pid in ui:
             continue
-        scheme = m.group(1).lower()
         schemes[scheme] += 1
         if scheme in EXTENSION_SCHEMES:
             rest = url[m.end():].lstrip("/")
             ext_id, _, path = rest.partition("/")
             ext[(scheme, ext_id)] += 1
             paths[(scheme, ext_id)].add(path.split("?")[0].split("#")[0])
-    return {"schemes": dict(schemes), "extensions": {k: (n, len(paths[k])) for k, n in ext.items()}}
+    return {"schemes": dict(schemes), "extensions": {k: (n, len(paths[k])) for k, n in ext.items()},
+            "ui": (len(ui), sum(1 for row in rows if row[0] in ui))}
 
 
 def render_page_requests(p):
@@ -746,6 +756,9 @@ def render_page_requests(p):
               "excluded. The netlog never sees a page's extension requests.", "",
               f"Requests: {sum(p['schemes'].values())}", "", "| scheme | requests |", "|---|---|"]
     lines += [f"| {s} | {n} |" for s, n in sorted(p["schemes"].items(), key=lambda kv: (-kv[1], kv[0]))]
+    n_ui, r_ui = p.get("ui", (0, 0))
+    if n_ui:
+        lines += ["", f"Browser UI renderers left out: {n_ui} ({r_ui} requests, chrome:// WebUI only)."]
     ext = p["extensions"]
     lines += ["", f"Extension requests: {sum(n for n, _ in ext.values())}"]
     if ext:
