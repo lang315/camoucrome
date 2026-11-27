@@ -681,8 +681,8 @@ RR = "ResourceFetcher::requestResource"
 IDA, IDB = "a" * 32, "b" * 32
 
 
-def rr(url, cat="blink,blink.resource"):
-    return {"name": RR, "cat": cat, "ph": "X", "pid": 1, "tid": 1, "ts": 1, "dur": 1, "args": {"url": url}}
+def rr(url, cat="blink,blink.resource", pid=1):
+    return {"name": RR, "cat": cat, "ph": "X", "pid": pid, "tid": 1, "ts": 1, "dur": 1, "args": {"url": url}}
 
 
 def with_config(events, cats):
@@ -717,9 +717,20 @@ def test_page_requests_captured_with_no_extension_rows_says_0_not_blind():
 
 def test_page_requests_captured_with_no_rows_at_all_is_0_by_the_config():
     p = r.page_requests(with_config([], ["-*", "disabled-by-default-camou.observe", "blink.resource"]))
-    assert p == {"schemes": {}, "extensions": {}}
+    assert p == {"schemes": {}, "extensions": {}, "ui": (0, 0)}
     out = r.render_page_requests(p)
     assert "Requests: 0" in out and "Extension requests: 0" in out
+
+
+def test_page_requests_leave_out_a_browser_ui_renderer():
+    # 2026-11-27 host run: the omnibox popup's WebUI renderer issued 27 chrome:// and 4 data: requests
+    ui = [rr("chrome://omnibox-popup.top-chrome/x.js", pid=2)] * 3 + [rr("data:image/png;base64,AAAA", pid=2)]
+    page = [rr("https://cdn.example.com/a.js"), rr("data:,x"), rr(f"chrome-extension://{IDA}/a.png")]
+    page += [rr("chrome://resources/x.css", pid=3), rr("https://y.example/b.js", pid=3)]  # not WebUI-only: kept
+    p = r.page_requests(with_config(ui + page, ["blink.resource"]))
+    assert p["schemes"] == {"https": 2, "data": 1, "chrome-extension": 1, "chrome": 1}
+    assert p["ui"] == (1, 4)
+    assert "Browser UI renderers left out: 1 (4 requests" in r.render_page_requests(p)
 
 
 def test_page_requests_captured_by_an_event_category_when_the_config_is_missing():
