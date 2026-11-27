@@ -692,6 +692,68 @@ def render_join(channels, matches, reads):
     return "\n".join(lines) + "\n"
 
 
+REQUEST_CATEGORY = "blink.resource"
+REQUEST_EVENT = "ResourceFetcher::requestResource"
+EXTENSION_SCHEMES = ("chrome-extension", "moz-extension", "safari-web-extension")
+_SCHEME = re.compile(r"([a-zA-Z][a-zA-Z0-9+.-]*):")
+
+
+def _request_category_on(data):
+    """True when the trace recorded blink.resource: its config lists the category, or one event carries it.
+    No config and no such event is not captured, never 0 (traces before the category was added)."""
+    if not data:
+        return False
+    cfg = _find(data.get("metadata", {}) if isinstance(data, dict) else {}, "trace-config")
+    if isinstance(cfg, str):
+        try:
+            cfg = json.loads(cfg)
+        except ValueError:
+            cfg = None
+    if isinstance(cfg, dict) and REQUEST_CATEGORY in (cfg.get("included_categories") or []):
+        return True
+    return any(REQUEST_CATEGORY in e.get("cat", "").split(",") for e in all_events(data))
+
+
+def page_requests(data):
+    """Renderer requests by scheme, from ResourceFetcher::requestResource (blink.resource). The netlog and the
+    observe category never see a page's chrome-extension:// requests (the renderer fails them first); this event
+    keeps the id and path. Returns {"schemes": {scheme: n}, "extensions": {(scheme, id): (n, distinct paths)}},
+    or None when the trace did not record the category."""
+    if not _request_category_on(data):
+        return None
+    schemes, ext, paths = collections.Counter(), collections.Counter(), collections.defaultdict(set)
+    for e in all_events(data):
+        url = (e.get("args") or {}).get("url") if e.get("name") == REQUEST_EVENT else None
+        m = _SCHEME.match(url or "")
+        if not m:
+            continue
+        scheme = m.group(1).lower()
+        schemes[scheme] += 1
+        if scheme in EXTENSION_SCHEMES:
+            rest = url[m.end():].lstrip("/")
+            ext_id, _, path = rest.partition("/")
+            ext[(scheme, ext_id)] += 1
+            paths[(scheme, ext_id)].add(path.split("?")[0].split("#")[0])
+    return {"schemes": dict(schemes), "extensions": {k: (n, len(paths[k])) for k, n in ext.items()}}
+
+
+def render_page_requests(p):
+    lines = ["## Page requests by scheme", ""]
+    if p is None:
+        return "\n".join(lines + [f"Page requests by scheme: not captured (the trace has no {REQUEST_CATEGORY} "
+                                  "category; extension probing is unknown, not absent).", ""]) + "\n"
+    lines += [f"From {REQUEST_EVENT} ({REQUEST_CATEGORY}): requests the renderer issued, the main document "
+              "excluded. The netlog never sees a page's extension requests.", "",
+              f"Requests: {sum(p['schemes'].values())}", "", "| scheme | requests |", "|---|---|"]
+    lines += [f"| {s} | {n} |" for s, n in sorted(p["schemes"].items(), key=lambda kv: (-kv[1], kv[0]))]
+    ext = p["extensions"]
+    lines += ["", f"Extension requests: {sum(n for n, _ in ext.values())}"]
+    if ext:
+        lines += ["", "| scheme | id | requests | paths |", "|---|---|---|---|"]
+        lines += [f"| {s} | {i} | {n} | {np} |" for (s, i), (n, np) in sorted(ext.items())]
+    return "\n".join(lines + [""]) + "\n"
+
+
 def _load_json(path):
     if not path:
         return None
@@ -789,6 +851,7 @@ def main():
     events = events_of(data) if data else []
     print(render(events, load_requests(a.netlog), cookies, buffer_note(data) if data else None,
                  intl_counts(all_events(data)) if data else None), end="")
+    print(render_page_requests(page_requests(data)))
     costs = load_costs(a.netlog)
     ch, mt = _load_json(a.channels), _load_json(a.matches)
     print(render_costs(costs))

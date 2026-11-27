@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>extprobe</title></head><body>
+<p>RED page for the observer's "page requests by scheme": 5 forms x 2 fake ids = 10 chrome-extension:// requests.</p>
+<script>
+// Each probe has its own path (x-<form>.png), so the report's per-id path count reads 5 for each id.
+// /note?k=&v= tells the server log what the page saw (served by python -m http.server; the 404 is fine).
+var IDS = ['a'.repeat(32), 'b'.repeat(32)];
+function note(k, v) { new Image().src = '/note?k=' + encodeURIComponent(k) + '&v=' + encodeURIComponent(v); }
+function done(k) { return [function () { note(k, 'ok'); }, function () { note(k, 'err'); }]; }
+IDS.forEach(function (id, i) {
+  function u(form) { return 'chrome-extension://' + id + '/x-' + form + '.png'; }
+  var h;
+  try { h = done('fetch' + i); fetch(u('fetch')).then(h[0], h[1]); } catch (e) { note('fetch' + i, 'throw'); }
+  try { h = done('xhr' + i); var x = new XMLHttpRequest(); x.onload = h[0]; x.onerror = h[1]; x.open('GET', u('xhr')); x.send(); } catch (e) { note('xhr' + i, 'throw'); }
+  try { h = done('img' + i); var im = new Image(); im.onload = h[0]; im.onerror = h[1]; im.src = u('img'); } catch (e) { note('img' + i, 'throw'); }
+  try { h = done('script' + i); var s = document.createElement('script'); s.onload = h[0]; s.onerror = h[1]; s.src = u('script'); document.body.appendChild(s); } catch (e) { note('script' + i, 'throw'); }
+  try { h = done('link' + i); var l = document.createElement('link'); l.rel = 'stylesheet'; l.onload = h[0]; l.onerror = h[1]; l.href = u('link'); document.head.appendChild(l); } catch (e) { note('link' + i, 'throw'); }
+});
+// The messaging probe: reachable only when an installed extension is externally_connectable for this origin.
+var rt = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime : null;
+note('chrome_runtime', rt ? typeof rt.sendMessage : 'undefined');
+if (rt && typeof rt.sendMessage === 'function') {
+  try { rt.sendMessage(IDS[0], {ping: 1}, function () { note('sendMessage', 'cb'); }); } catch (e) { note('sendMessage', 'throw'); }
+}
+</script></body></html>

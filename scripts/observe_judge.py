@@ -144,7 +144,29 @@ def make_baseline(by_arm):
     return out
 
 
-def judge(arm_dir, arm, base, summary_out=None, site=None):
+def main_doc_loaded(net, url):
+    """True when the netlog holds a request for url that got a 2xx response (a redirect on the same request
+    counts by its final 2xx). A refused connection has no response; a 404 is a page that did not load either."""
+    try:
+        types = net["constants"]["logEventTypes"]
+        start, headers = types["URL_REQUEST_START_JOB"], types["HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]
+        begin = net["constants"]["logEventPhase"]["PHASE_BEGIN"]
+    except (KeyError, TypeError):
+        return False
+    page, ok = set(), set()
+    for e in net.get("events", []):
+        sid, p = (e.get("source") or {}).get("id"), e.get("params") or {}
+        if e.get("type") == start and e.get("phase") == begin and p.get("url") == url:
+            page.add(sid)
+        elif e.get("type") == headers and p.get("headers"):
+            first = p["headers"][0]
+            status = first.split(":status:", 1)[1] if first.startswith(":status:") else first.split(" ")[1:2]
+            if "".join(status).strip()[:1] == "2":
+                ok.add(sid)
+    return bool(page & ok)
+
+
+def judge(arm_dir, arm, base, summary_out=None, site=None, main_url=None):
     try:
         s = summarize(arm_dir, site)
     except MissingInput as e:
@@ -156,6 +178,9 @@ def judge(arm_dir, arm, base, summary_out=None, site=None):
     rows = [("UNMEASURED", w) for w in unmeasured(s, arm, site)]
     if not req:
         rows.append(("INFO", "baseline requires 0 groups: PASS means measured only"))
+        # with nothing required, a page that never loaded would PASS (fbext R0 run 1, 2026-11-25)
+        if main_url and not main_doc_loaded(_json(pathlib.Path(arm_dir) / "net.json"), main_url):
+            rows.append(("UNMEASURED", f"main document did not load: no 2xx response for {main_url}"))
     for g in req:
         n = s["groups"].get(g, 0)
         rows.append(("PASS" if n > 0 else "FAIL", f"{g} {n}"))
@@ -188,6 +213,8 @@ def main(argv=None):
     p.add_argument("--arm", nargs=2, metavar=("N", "DIR"), required=True)
     p.add_argument("--summary-out")
     p.add_argument("--site", default="facebook")
+    p.add_argument("--main-url", help="the URL the arm launched; with a baseline that requires 0 groups, "
+                                      "no 2xx response for it is UNMEASURED")
     a = ap.parse_args(argv)
     try:
         site = sites.load(a.site)
@@ -224,7 +251,7 @@ def main(argv=None):
         print(f"usage error: baseline {a.baseline} has no entry for arm {arm}", file=sys.stderr)
         return 2
     try:
-        v, rows = judge(a.arm[1], arm, base, a.summary_out, site)
+        v, rows = judge(a.arm[1], arm, base, a.summary_out, site, a.main_url)
     except Exception as e:  # a crash measured nothing, and exit 1 would read as FAIL
         v, rows = "UNMEASURED", [("UNMEASURED", f"judge error ({type(e).__name__})")]
     for level, text in rows:
