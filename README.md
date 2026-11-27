@@ -283,6 +283,10 @@ environment had one. Strict together with lax is an error. `CAMOU_CONFIG_STRICT=
 - `navigator.webdriver` is always false, including under `--enable-automation`, where stock Chrome
   reports true. Do not pass that switch yourself; the bundled clients never do.
 - Windows SmartScreen warns on first run: choose More info, then Run anyway.
+- Linux under WSL2: WSL's crash collector writes a core dump of a crashed browser process to
+  `%TEMP%\wsl-crashes` on Windows, and the dump holds the process environment, `CAMOU_CONFIG`
+  (the identity) included. The browser's own no-dump setting does not reach it. Set
+  `maxCrashDumpCount=-1` under `[wsl2]` in `%UserProfile%\.wslconfig`, then restart WSL.
 
 ## Building from source
 
