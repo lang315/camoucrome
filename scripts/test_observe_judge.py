@@ -301,3 +301,68 @@ def test_expired_hint_and_cookie_domain_come_from_the_site():
     assert j.unmeasured(s, 3) == [fb.expired_hint]
     assert j.unmeasured(dict(s, cookies=[".facebook.com:c_user", ".facebook.com:xs"]), 3) == []
     assert j.unmeasured(dict(s, cookies=[]), 3, sites.load("testpage")) == []  # no login cookies to miss
+
+
+# load guard: a site with no baseline is UNMEASURED, not PASS, when the page it launched did not load
+PAGE = "http://127.0.0.1:8765/"
+
+
+def page_net(arm, *requests):
+    """net.json with one URL request per (url, [response header status lines]), in the netlog's shape."""
+    types = {"URL_REQUEST_START_JOB": 7, "HTTP_TRANSACTION_READ_RESPONSE_HEADERS": 9, "REQUEST_ALIVE": 1}
+    events = []
+    for sid, (url, statuses, *err) in enumerate(requests, start=10):
+        src = {"id": sid, "type": 1}
+        events.append({"type": 7, "phase": 1, "time": "1000", "source": src, "params": {"url": url, "method": "GET"}})
+        for st in statuses:
+            events.append({"type": 9, "phase": 0, "time": "1001", "source": src, "params": {"headers": st}})
+        if err:
+            events.append({"type": 7, "phase": 2, "time": "1002", "source": src, "params": {"net_error": err[0]}})
+    (arm / "net.json").write_text(json.dumps({"constants": {"logEventTypes": types,
+                                                            "logEventPhase": {"PHASE_BEGIN": 1, "PHASE_END": 2, "PHASE_NONE": 0}},
+                                              "events": events}))
+    return arm
+
+
+@pytest.mark.parametrize("reqs,loaded", [
+    ([(PAGE, [["HTTP/1.0 200 OK", "Content-Type: text/html"]])], True),
+    ([(PAGE, [["HTTP/1.1 302 Found", "Location: /x"], ["HTTP/1.1 200 OK"]])], True),   # a redirect on the same request
+    ([(PAGE, [[":status: 200", "content-type: text/html"]])], True),                      # HTTP/2 shape
+    ([(PAGE, [], -102)], False),                                  # the dead loopback server: connection refused
+    ([(PAGE, [["HTTP/1.0 404 File not found"]])], False),         # a server in the wrong directory
+    ([("http://127.0.0.1:8765/other", [["HTTP/1.0 200 OK"]])], False),  # another URL loaded, not the page
+    ([], False),
+])
+def test_main_doc_loaded_needs_a_2xx_for_the_launched_url(tmp_path, reqs, loaded):
+    arm = page_net(make_arm(tmp_path), *reqs)
+    assert j.main_doc_loaded(json.loads((arm / "net.json").read_text()), PAGE) is loaded
+
+
+def test_no_baseline_and_page_not_loaded_is_unmeasured_not_pass(tmp_path):
+    arm = page_net(make_arm(tmp_path), (PAGE, [], -102))
+    assert j.judge(arm, 1, {})[0] == "PASS"  # RED: without the launched URL the guard cannot run
+    v, rows = j.judge(arm, 1, {}, main_url=PAGE)
+    assert v == "UNMEASURED"
+    assert ("UNMEASURED", f"main document did not load: no 2xx response for {PAGE}") in rows
+
+
+def test_no_baseline_and_page_loaded_stays_pass(tmp_path):
+    arm = page_net(make_arm(tmp_path), (PAGE, [["HTTP/1.0 200 OK"]]))
+    assert j.judge(arm, 1, {}, main_url=PAGE)[0] == "PASS"
+
+
+def test_the_guard_leaves_a_calibrated_baseline_alone(tmp_path):
+    """With required groups, a dead page already FAILs on zero groups; the guard is for the no-baseline PASS."""
+    arm = page_net(make_arm(tmp_path), (PAGE, [], -102))
+    v, rows = j.judge(arm, 1, BASE, main_url=PAGE)
+    assert v == "PASS" and not any("main document" in t for _l, t in rows)
+
+
+def test_cli_main_url_turns_the_dead_page_pass_into_exit_3(tmp_path):
+    arm = page_net(make_arm(tmp_path / "a"), (PAGE, [], -102))
+    bfile = tmp_path / "empty.json"
+    bfile.write_text("{}")
+    assert run_cli("judge", "--baseline", str(bfile), "--arm", "1", str(arm)).returncode == 0
+    p = run_cli("judge", "--baseline", str(bfile), "--arm", "1", str(arm), "--main-url", PAGE)
+    assert p.returncode == 3, p.stdout + p.stderr
+    assert "UNMEASURED arm1 main document did not load" in p.stdout

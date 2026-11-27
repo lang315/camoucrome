@@ -471,6 +471,24 @@ The report's first line says whether the trace buffer (200 MB under
 trace while the browser keeps running, so the counts then cover only the start
 of the session and are lower bounds; the netlog's requests are still complete.
 
+"Page requests by scheme" counts the requests the page's renderer issued
+(`ResourceFetcher::requestResource`, trace category `blink.resource`, which
+`recon.ps1` records since 2026-11-27), by URL scheme; the main document is
+not one of them. Its extension table lists each `chrome-extension://`,
+`moz-extension://` or `safari-web-extension://` id a page requested, with the
+request count and the number of distinct paths: this is how extension
+probing shows. The netlog and the observe category never see these requests,
+because the renderer fails them before the network stack, and
+`devtools.timeline` rewrites the id to `invalid`. A trace recorded without
+the category (every trace before 2026-11-27, and a stock arm's `-`) reads
+"not captured", which means unknown, not 0. `scripts/observe_extprobe/` holds
+the RED page (two fake ids, five request forms each, so 10 rows) and a
+host-only site profile for it.
+
+`observe-auto.ps1` passes arms 1 and 3 the URL they loaded. When the site's
+baseline requires no group, the judge says `UNMEASURED` unless that URL got a
+2xx response in the netlog: a page that never loaded used to `PASS`.
+
 Sections named `chrome://...` (the omnibox popup, the new-tab page) are
 Chrome's own internal pages, not web content. Dedicated-worker reads carry no
 site, so they land in a section named after the worker's origin (its

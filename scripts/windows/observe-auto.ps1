@@ -268,8 +268,14 @@ try {
       if (-not $hasCh) { "UNMEASURED arm$a no channels.json"; $worst = [math]::Max($worst, 3); continue }
       if ($a -eq '3w' -and $drc -eq 0) { $WarmOk = $true }
       $judgeBase = $Discovery; $judgeArm = if ($a -eq '1f') { '1' } else { '3' }
-    } else { $judgeBase = $Baseline; $judgeArm = $a }
-    python (Join-Path $Root 'observe_judge.py') judge --site $Site --baseline $judgeBase --arm $judgeArm (Join-Path $run "arm$a") --summary-out (Join-Path $run "arm$a\summary.json")
+      $ja = @()
+    } else {
+      $judgeBase = $Baseline; $judgeArm = $a
+      # load guard (2026-11-27): arms 1 and 3 load origin + '/' (recon.ps1); with a baseline that requires nothing,
+      # a page that never answered 2xx is UNMEASURED, not PASS (a dead loopback server PASSed, fbext R0 run 1)
+      $ja = @('--main-url', "$Fb/")
+    }
+    python (Join-Path $Root 'observe_judge.py') judge --site $Site --baseline $judgeBase --arm $judgeArm (Join-Path $run "arm$a") --summary-out (Join-Path $run "arm$a\summary.json") @ja
     $rc = $LASTEXITCODE; if ($rc -notin 0, 1, 2, 3) { $rc = 3 }  # a crash code is no verdict
     $worst = [math]::Max($worst, $rc)
   }

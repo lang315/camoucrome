@@ -1,0 +1,20 @@
+{
+  "$comment": "Host-only site profile for the extprobe RED page (index.html beside it). Copy to <observe>\\settings\\sites\\extprobe\\ for a run and delete it after; it is not in settings/sites because it is a test page, not a site. Served by python -m http.server on 127.0.0.1:8765.",
+  "name": "extprobe",
+  "origin": "http://127.0.0.1:8765",
+  "surface_site": "http://127.0.0.1",
+  "cookie_domain": "127.0.0.1",
+  "logged_in_cookies": [],
+  "pages": {"1": ["/"]},
+  "route_paths": ["/ajax/bz"],
+  "unlink_endpoints": ["/ajax/bz"],
+  "beacon_path": "/ajax/bz",
+  "post_hosts": ["127.0.0.1"],
+  "resource_hosts": ["127.0.0.1"],
+  "doc_hosts": ["127.0.0.1"],
+  "ws_hosts": ["127.0.0.1"],
+  "backup": "",
+  "baseline": "D:\\camou-win\\observe\\baseline-empty.json",
+  "ledger": "auto\\ledger-extprobe.json",
+  "expired_hint": "extprobe has no login"
+}

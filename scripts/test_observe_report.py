@@ -674,3 +674,68 @@ def test_report_main_refuses_an_unknown_site(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["observe_report.py", "-", str(tmp_path / "net.json"), "--site", "nosuch"])
     assert r.main() == 3
     assert "UNMEASURED site: nosuch not found" in capsys.readouterr().out
+
+
+# page requests by scheme: blink.resource ResourceFetcher::requestResource (made-up ids, no site data)
+RR = "ResourceFetcher::requestResource"
+IDA, IDB = "a" * 32, "b" * 32
+
+
+def rr(url, cat="blink,blink.resource"):
+    return {"name": RR, "cat": cat, "ph": "X", "pid": 1, "tid": 1, "ts": 1, "dur": 1, "args": {"url": url}}
+
+
+def with_config(events, cats):
+    return {"traceEvents": events,
+            "metadata": {"trace-config": json.dumps({"included_categories": cats, "record_mode": "record-as-much-as-possible"})}}
+
+
+def test_page_requests_by_scheme_lists_each_extension_id_with_counts_and_paths():
+    events = [rr(f"chrome-extension://{IDA}/x-{f}.png") for f in ("fetch", "xhr", "img", "script", "link")]
+    events += [rr(f"chrome-extension://{IDB}/x-img.png")] * 2
+    events += [rr(f"moz-extension://{IDA}/m.js"), rr("safari-web-extension://cccc/s.css")]
+    events += [rr("https://cdn.example.com/a.js")] * 3 + [rr("data:image/png;base64,AAAA")]
+    events += [ev("Navigator.userAgent.get", "https://a.com", "https://a.com"),
+               {"name": RR, "cat": "blink,blink.resource", "ph": "X", "args": {}}]  # no url: not a row
+    p = r.page_requests(with_config(events, ["disabled-by-default-camou.observe", "blink.resource"]))
+    assert p["schemes"] == {"chrome-extension": 7, "moz-extension": 1, "safari-web-extension": 1, "https": 3, "data": 1}
+    assert p["extensions"] == {("chrome-extension", IDA): (5, 5), ("chrome-extension", IDB): (2, 1),
+                               ("moz-extension", IDA): (1, 1), ("safari-web-extension", "cccc"): (1, 1)}
+    out = r.render_page_requests(p)
+    assert "## Page requests by scheme" in out
+    assert "| https | 3 |" in out and "| chrome-extension | 7 |" in out
+    assert f"| chrome-extension | {IDA} | 5 | 5 |" in out
+    assert f"| chrome-extension | {IDB} | 2 | 1 |" in out
+    assert "x-fetch" not in out  # paths are counted, not printed
+
+
+def test_page_requests_captured_with_no_extension_rows_says_0_not_blind():
+    p = r.page_requests(with_config([rr("https://cdn.example.com/a.js")], ["blink.resource"]))
+    out = r.render_page_requests(p)
+    assert "Extension requests: 0" in out and "not captured" not in out
+
+
+def test_page_requests_captured_with_no_rows_at_all_is_0_by_the_config():
+    p = r.page_requests(with_config([], ["-*", "disabled-by-default-camou.observe", "blink.resource"]))
+    assert p == {"schemes": {}, "extensions": {}}
+    out = r.render_page_requests(p)
+    assert "Requests: 0" in out and "Extension requests: 0" in out
+
+
+def test_page_requests_captured_by_an_event_category_when_the_config_is_missing():
+    p = r.page_requests({"traceEvents": [rr("https://x.example/a.js", cat="blink,blink.resource")]})
+    assert p["schemes"] == {"https": 1}
+
+
+def test_page_requests_not_captured_is_never_0():
+    old = with_config([ev("Navigator.userAgent.get", "https://a.com", "https://a.com")],
+                      ["-*", "disabled-by-default-camou.observe"])
+    for data in (old, {"traceEvents": []}, [], None):
+        assert r.page_requests(data) is None
+        out = r.render_page_requests(r.page_requests(data))
+        assert "not captured" in out and "0" not in out.replace("blink.resource", "")
+
+
+def test_page_requests_category_match_is_by_list_item_not_substring():
+    p = r.page_requests(with_config([], ["blink.resource_extra"]))
+    assert p is None

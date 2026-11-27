@@ -4,7 +4,8 @@
 #        recon.ps1 -PostOnly -Dir <arm dir> -Profile <profile dir>
 # Unattended (observe-auto.ps1): -Wait <s> -Out <run dir> [-FromProfile <dir>] [-KillBelowGB <n>]
 param(
-  [ValidateSet('facebook','instagram','threads')][string]$Site,
+  # any site profile under settings\sites (the name rule observe-auto.ps1 enforces)
+  [ValidatePattern('^[a-z0-9_-]+$')][string]$Site,
   [ValidateSet('1','2','3','4','1f','1c','3w','4a','lw','lf1','lf2','lf3','lc1','lc2','lc3','lu1','lu2','lu3')][string]$Arm,
   [switch]$Force,
   [switch]$Intl,
@@ -155,7 +156,9 @@ Write-Host '=============================================================='
 Write-Host ''
 
 # -Intl adds V8 entry slices and runtime call stats (needs v8_enable_runtime_call_stats = true)
-$cats = '-*,disabled-by-default-camou.observe'
+# blink.resource: ResourceFetcher::requestResource is the one channel that sees a page's chrome-extension:// probes
+# with id and path (netlog and the observe category see none; fbext R0b, 2026-11-25); the report's "page requests by scheme"
+$cats = '-*,disabled-by-default-camou.observe,blink.resource'
 if ($Intl) { $cats += ',v8,disabled-by-default-v8.runtime_stats' }
 if ($Cpu) { $cats += ',devtools.timeline' }
 if ($Exe) {
