@@ -41,3 +41,24 @@ def test_a_renderer_crash_needs_the_event_and_a_live_browser():
     seen, detail = v.verdict("chrome://crash", crashed=[], code=None, alive=True, swallowed=["TargetClosedError()"])
     assert seen is False and "TargetClosedError()" in detail
     assert v.verdict("chrome://crash", crashed=[True], code=1, alive=False, swallowed=[])[0] is False
+
+
+def test_windows_roots_find_a_planted_dump(monkeypatch, tmp_path):
+    """The host RED (stock chrome) crashes into crashpad's profile database, so the WER and CrashDumps roots are never
+    exercised by a real crash: a planted dump there, marker in UTF-16LE as Windows writes the environment, must count."""
+    local, data, profile = tmp_path / "local", tmp_path / "pd", tmp_path / "profile"
+    monkeypatch.setattr(v, "WINDOWS", True)
+    monkeypatch.setenv("LOCALAPPDATA", str(local))
+    monkeypatch.setenv("ProgramData", str(data))
+    monkeypatch.setattr(v.tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
+    planted = [local / "CrashDumps" / "chrome.exe.4242.dmp",
+               data / "Microsoft" / "Windows" / "WER" / "ReportQueue" / "AppCrash_chrome.exe_1" / "Report.wer",
+               local / "Microsoft" / "Windows" / "WER" / "ReportArchive" / "x" / "memory.hdmp"]
+    for f in planted:
+        f.parent.mkdir(parents=True)
+        f.write_bytes(b"\0" + ("CAMOU_CONFIG=" + v.CONFIG).encode("utf-16-le"))
+    profile.mkdir()
+    (profile / "Local State").write_text(v.MARKER)  # not a dump name, in a crashpad root: not counted
+    dumps, marked = v.new_dumps(profile, since=0)
+    assert sorted(dumps) == sorted(planted)
+    assert marked == 3

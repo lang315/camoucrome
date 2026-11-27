@@ -14,6 +14,7 @@ copy of launch(), because the five hardening fixes above are exactly what a
 copy would drift away from.
 """
 
+import atexit
 import collections
 import json
 import os
@@ -145,6 +146,18 @@ def layout(environ=None, osname=None):
 # first launch.
 STDERR_LOG = os.path.join(tempfile.gettempdir(),
                           f"camoucrome_verify_stderr.{os.getpid()}.log")
+
+
+def _remove_stderr_log():
+    """atexit: the log is per process and holds camoucfg lines, some with config values; 244 were left in the
+    Windows host's %TEMP% (2026-11-27). _exit_if_unmeasured's os._exit skips atexit, so it calls this too."""
+    try:
+        os.remove(STDERR_LOG)
+    except OSError:
+        pass
+
+
+atexit.register(_remove_stderr_log)
 
 def read_stderr():
     """Guarded read of this session's browser stderr. launch() truncates the log per launch, so a read sees only its
@@ -462,6 +475,7 @@ def _exit_if_unmeasured(lines, exit=os._exit, status=_STATUS):
         rc = 1 if status["failed"] else 3
         print(f"UNMEASURED: {len(lines)} launch(es) unmeasured; exit {rc}", flush=True)
         sys.stdout.flush()
+        _remove_stderr_log()
         exit(rc)
 
 
