@@ -388,7 +388,7 @@ Bad config must never crash a renderer — a crash is itself a fingerprint.
 
 ### Issue tracker
 
-Issues and specs are local markdown under `.scratch/` (gitignored, never pushed: the repo is public). See `docs/agents/issue-tracker.md`.
+GitHub issues for public, host-free defects; the private tracker, `docs/superpowers/issues/` in the main clone (pushed to the notes remote), for anything that names the owner's accounts, fb, host details, or anything the owner keeps private, and for the specs and tickets the skills write. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
