@@ -383,3 +383,17 @@ table of them. The discipline:
    refinement and the fail-closed exception noted in the conventions).
 
 Bad config must never crash a renderer — a crash is itself a fingerprint.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub issues for public, host-free defects; the private tracker, `docs/superpowers/issues/` in the main clone (pushed to the notes remote), for anything that names the owner's accounts, fb, host details, or anything the owner keeps private, and for the specs and tickets the skills write. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default role strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), kept as `Status:` lines. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `docs/superpowers/CONTEXT.md` and `docs/superpowers/adr/`, in the private notes repository, never at the public root. See `docs/agents/domain.md`.
