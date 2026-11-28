@@ -19,6 +19,13 @@ def test_forbidden_options_match_the_contract():
     assert set(CONTRACT["forbidden_context_options"]["options"]) == camoucrome.FORBIDDEN_OPTIONS
 
 
+def test_temp_dirs_match_the_contract():
+    from camoucrome import atrest
+    td = CONTRACT["launch"]["temp_dirs"]
+    assert (atrest.TEMP_PREFIX, atrest.CRASH_KIND, atrest.STALE_AFTER) == \
+        (td["prefix"], td["crash_kind"], td["stale_after_seconds"])
+
+
 def test_args_match_the_contract():
     launch = CONTRACT["launch"]
     pipe = ["--remote-debugging-pipe"]

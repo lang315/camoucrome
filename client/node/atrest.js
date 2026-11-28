@@ -7,11 +7,16 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+// TEMP_PREFIX, CRASH_KIND and STALE_AFTER_MS mirror settings/launcher.json launch.temp_dirs; test/launcher.test.js
+// asserts it.
+const TEMP_PREFIX = 'camoucrome-';
+const CRASH_KIND = 'crash-';
 const STALE_AFTER_MS = 3600 * 1000; // since the dir last changed
 const REDACTED = '<redacted>';
+const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // camoucrome-<pid>-<rand> (a temp profile) and camoucrome-crash-<pid>-<rand>, <pid> the launching client's.
 // The scripts' own camoucrome-<word>- dirs and the pid-less names of older clients never match.
-const OWNED = /^camoucrome-(?:crash-)?([0-9]+)-[^/\\]+$/;
+const OWNED = new RegExp(`^${escape(TEMP_PREFIX)}(?:${escape(CRASH_KIND)})?([0-9]+)-[^/\\\\]+$`);
 // A quoted segment shaped like a key name (every settings/keys.json name is) is kept on a camoucfg: line unless
 // it is a configured value, and so is an invariant id: both are public constants the operator needs.
 const KEY_SHAPED = /^[A-Za-z][A-Za-z0-9_]*(?:[.:][A-Za-z0-9_]+)+$/;
@@ -22,11 +27,11 @@ function makedirs(dir) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 }
 
-// A temp dir named for this process (kind '' for a profile, 'crash-' for crash
+// A temp dir named for this process (kind '' for a profile, CRASH_KIND for crash
 // dumps), so sweep() can tell a killed client's leftovers from a live one's.
 // mkdtemp makes it 0700.
 function mkdtemp(kind = '') {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `camoucrome-${kind}${process.pid}-`));
+  return fs.mkdtempSync(path.join(os.tmpdir(), `${TEMP_PREFIX}${kind}${process.pid}-`));
 }
 
 function alive(pid) {
@@ -194,4 +199,4 @@ function redactError(e, env) {
   return e;
 }
 
-module.exports = { STALE_AFTER_MS, makedirs, mkdtemp, sweep, redact, redactError };
+module.exports = { TEMP_PREFIX, CRASH_KIND, STALE_AFTER_MS, makedirs, mkdtemp, sweep, redact, redactError };

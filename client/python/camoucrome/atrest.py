@@ -9,11 +9,15 @@ import sys
 import tempfile
 import time
 
+# TEMP_PREFIX, CRASH_KIND and STALE_AFTER mirror settings/launcher.json launch.temp_dirs; tests/test_launcher.py
+# asserts it.
+TEMP_PREFIX = "camoucrome-"
+CRASH_KIND = "crash-"
 STALE_AFTER = 3600.0  # seconds since the dir last changed
 REDACTED = "<redacted>"
 # camoucrome-<pid>-<rand> (a temp profile) and camoucrome-crash-<pid>-<rand>, <pid> the launching client's.
 # The scripts' own camoucrome-<word>- dirs and the pid-less names of older clients never match.
-_OWNED = re.compile(r"camoucrome-(?:crash-)?([0-9]+)-[^/\\]+\Z")
+_OWNED = re.compile(re.escape(TEMP_PREFIX) + "(?:" + re.escape(CRASH_KIND) + r")?([0-9]+)-[^/\\]+\Z")
 # A quoted segment shaped like a key name (every settings/keys.json name is) is kept on a camoucfg: line unless
 # it is a configured value, and so is an invariant id: both are public constants the operator needs.
 _KEY_SHAPED = re.compile(r"[A-Za-z][A-Za-z0-9_]*(?:[.:][A-Za-z0-9_]+)+\Z")
@@ -36,9 +40,9 @@ def makedirs(path):
 
 
 def mkdtemp(kind=""):
-    """A temp dir named for this process (kind "" for a profile, "crash-" for crash dumps), so sweep() can tell
+    """A temp dir named for this process (kind "" for a profile, CRASH_KIND for crash dumps), so sweep() can tell
     a killed client's leftovers from a live one's. mkdtemp makes it 0700."""
-    return tempfile.mkdtemp(prefix=f"camoucrome-{kind}{os.getpid()}-")
+    return tempfile.mkdtemp(prefix=f"{TEMP_PREFIX}{kind}{os.getpid()}-")
 
 
 def _alive(pid):

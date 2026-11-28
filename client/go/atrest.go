@@ -21,15 +21,18 @@ import (
 	"github.com/mxschmitt/playwright-go"
 )
 
+// tempPrefix, crashKind and staleAfter mirror settings/launcher.json launch.temp_dirs.
 const (
-	staleAfter = time.Hour // since the dir last changed
+	tempPrefix = "camoucrome-"
+	crashKind  = "crash-"
+	staleAfter = 3600 * time.Second // since the dir last changed
 	redacted   = "<redacted>"
 )
 
 var (
 	// camoucrome-<pid>-<rand> (a temp profile) and camoucrome-crash-<pid>-<rand>, <pid> the launching client's.
 	// The scripts' own camoucrome-<word>- dirs and the pid-less names of older clients never match.
-	ownedName = regexp.MustCompile(`^camoucrome-(?:crash-)?([0-9]+)-[^/\\]+$`)
+	ownedName = regexp.MustCompile(`^` + regexp.QuoteMeta(tempPrefix) + `(?:` + regexp.QuoteMeta(crashKind) + `)?([0-9]+)-[^/\\]+$`)
 	rawEnv    = regexp.MustCompile(`^CAMOU_(CONFIG|PRESET)(_[0-9]+)?$`)
 	shouldBe  = regexp.MustCompile(`(It should be ).+?(\. Not repaired)`)
 	quoted    = regexp.MustCompile(`(invariant )?'[^'\n]*'`)
@@ -39,10 +42,10 @@ var (
 )
 
 // MkdirTemp makes a temp dir named for this process (kind "" for a profile,
-// "crash-" for crash dumps), so Sweep can tell a killed client's leftovers
+// crashKind for crash dumps), so Sweep can tell a killed client's leftovers
 // from a live one's. os.MkdirTemp makes it 0700.
 func MkdirTemp(kind string) (string, error) {
-	return os.MkdirTemp("", fmt.Sprintf("camoucrome-%s%d-", kind, os.Getpid()))
+	return os.MkdirTemp("", fmt.Sprintf("%s%s%d-", tempPrefix, kind, os.Getpid()))
 }
 
 // Sweep removes the temp profiles and crash dirs a killed client left (a

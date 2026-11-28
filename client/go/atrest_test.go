@@ -6,6 +6,7 @@ package camoucrome
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -71,6 +72,29 @@ func TestProfileSeedsLeavesAnExistingDirModeAlone(t *testing.T) {
 	}
 	if m := mode(t, udd); m != 0o755 {
 		t.Errorf("mode %o, want 755 kept", m)
+	}
+}
+
+func TestTempDirsMatchTheContract(t *testing.T) {
+	raw, err := os.ReadFile("../../settings/launcher.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c struct {
+		Launch struct {
+			TempDirs struct {
+				Prefix     string `json:"prefix"`
+				CrashKind  string `json:"crash_kind"`
+				StaleAfter int    `json:"stale_after_seconds"`
+			} `json:"temp_dirs"`
+		} `json:"launch"`
+	}
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatal(err)
+	}
+	td := c.Launch.TempDirs
+	if td.Prefix != tempPrefix || td.CrashKind != crashKind || time.Duration(td.StaleAfter)*time.Second != staleAfter {
+		t.Fatalf("launch.temp_dirs %+v, client %q %q %v", td, tempPrefix, crashKind, staleAfter)
 	}
 }
 

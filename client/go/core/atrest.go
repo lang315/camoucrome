@@ -15,11 +15,14 @@ import (
 	"time"
 )
 
-const staleAfter = time.Hour // since the dir last changed
-
+// Set by init (launch.go) from settings/launcher.json launch.temp_dirs:
+// staleAfter is the time since the dir last changed; ownedName matches
 // camoucrome-<pid>-<rand> (a temp profile) and camoucrome-crash-<pid>-<rand>, <pid> the launching client's.
 // The scripts' own camoucrome-<word>- dirs and the pid-less names of older clients never match.
-var ownedName = regexp.MustCompile(`^camoucrome-(?:crash-)?([0-9]+)-[^/\\]+$`)
+var (
+	staleAfter time.Duration
+	ownedName  *regexp.Regexp
+)
 
 // sweep removes the temp profiles and crash dirs a killed client left. Only
 // this client family's names; never keep (the caller's profile) or a dir

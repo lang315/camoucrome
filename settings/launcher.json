@@ -93,6 +93,12 @@
    "env": "BREAKPAD_DUMP_LOCATION",
    "why": "A crash's minidump holds the process's whole environment block -- CAMOU_CONFIG verbatim beside every host variable (measured 2026-10-03 on Windows: a marker in the config was found in the dump as UTF-16, a no-config control had none). Chrome writes it to <profile>/Crashpad unless BREAKPAD_DUMP_LOCATION names another directory (chrome/app/chrome_crash_reporter_client_win.cc GetCrashDumpLocation; the POSIX client reads the same variable), so a kept profile would accumulate a plain-text record of the identity next to the machine's. Every launch creates a temp directory, points the variable at it, and removes it when the context closes or the launch fails; the parent's value is never inherited. Nothing is uploaded either way: the upload URL is empty unless the build is branded and official."
   },
+  "temp_dirs": {
+   "why": "A launch's temp profile is named <prefix><pid>-<rand> and its crash-dump dir <prefix><crash_kind><pid>-<rand>, <pid> the launching client's, so the next launch can sweep what a killed client left: a matching dir unchanged for stale_after_seconds, owned by this user, whose pid names no live process and whose profile no browser holds. The scripts' own camoucrome-<word>- dirs and the pid-less names of older clients never match.",
+   "prefix": "camoucrome-",
+   "crash_kind": "crash-",
+   "stale_after_seconds": 3600
+  },
   "config_defaults": {
    "keys": {
     "input:deviceGrid": true

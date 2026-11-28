@@ -54,6 +54,13 @@ test('accept-lang follows the config', () => {
   assert.equal(c.acceptLangOf({ 'screen.width': 1 }), null);
 });
 
+test('temp dir names and sweep age match the contract', () => {
+  const atrest = require('../atrest');
+  const td = L.temp_dirs;
+  assert.deepEqual([atrest.TEMP_PREFIX, atrest.CRASH_KIND, atrest.STALE_AFTER_MS],
+    [td.prefix, td.crash_kind, td.stale_after_seconds * 1000]);
+});
+
 test('per-instance seeds match the contract and are non-zero uint32', () => {
   assert.deepEqual(c.SEED_KEYS, CONTRACT.per_instance_seeds.keys);
   const cfg = c.perInstanceConfig();
