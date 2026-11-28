@@ -164,6 +164,8 @@ def test_workloads_keep_the_labelled_split():
     assert m.WORKLOAD_GROUP["json_parse"] == "cpp"
     assert m.WORKLOAD_GROUP["sort_builtin"] == "builtin"
     assert set(m.WORKLOAD_GROUP) == set(m.workload_names())
+    page = m.page_html()
+    assert all(f"    {w}: (n) =>" in page for w in m.WORKLOAD_GROUP)       # every row is a workload the page runs
 
 
 # ---- result parsing ----

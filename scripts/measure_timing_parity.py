@@ -81,6 +81,7 @@ WORKLOAD_GROUP = {
     "json_parse": "cpp", "json_stringify": "cpp", "structured_clone": "cpp", "text_codec": "cpp",
     "dom_append": "cpp", "inner_html": "cpp", "query_selector_all": "cpp", "computed_style": "cpp", "canvas2d": "cpp",
     "canvas2d_read": "cpp",   # canvas2d plus ONE getImageData of the canvas: the cost a lazy noise mask moves to read time
+    "canvas2d_read_np": "cpp",   # canvas2d_read with non-periodic positions: a memo or elision cannot profit from repeats
     "gcs_read": "cpp", "style_set": "cpp", "layout_read": "cpp",   # computed_style split: getComputedStyle alone, style write alone, forced layout alone
     "sort_builtin": "builtin",
 }
@@ -161,6 +162,10 @@ function workloads(plant) {
   const arr = Array.from({length: 500}, (_, i) => (i * 7919) % 1009);
   let sink;
   const canvasOps = (cx, n) => { for (let i = 0; i < n; i++) { cx.fillStyle = i & 1 ? '#f60' : '#06f'; cx.beginPath(); cx.arc((i * 37) % 256, (i * 91) % 256, 6, 0, 7); cx.fill(); cx.fillRect((i * 13) % 250, (i * 29) % 250, 5, 5); } };
+  // the same ops with positions from an LCG (period 2^32): canvasOps repeats every 256 arcs, so a cache or a dead-op
+  // elision would score far better on it than on a real page; reseeded per call, so every arm draws the same scene
+  const canvasOpsNp = (cx, n) => { let s = 12345; const r = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) >>> 16;
+    for (let i = 0; i < n; i++) { cx.fillStyle = i & 1 ? '#f60' : '#06f'; cx.beginPath(); cx.arc(r() & 255, r() & 255, 6, 0, 7); cx.fill(); cx.fillRect(r() % 250, r() % 250, 5, 5); } };
   const W = {
     int: (n) => { let x = 0; for (let i = 0; i < n; i++) x = (x + i * 7) | 0; sink = x; },
     float: (n) => { let x = 0.5; for (let i = 0; i < n; i++) x = x * 1.0000001 + Math.sin(i) * 1e-9; sink = x; },
@@ -180,6 +185,7 @@ function workloads(plant) {
     // a FRESH canvas per call: repeated reads of one canvas make Chrome switch it to the CPU, where a seeded canvas has
     // no mask to build and the workload would hide the cost it exists to keep
     canvas2d_read: (n) => { const c = document.createElement('canvas'); c.width = 256; c.height = 256; const x = c.getContext('2d'); canvasOps(x, n); sink = x.getImageData(0, 0, 256, 256); },
+    canvas2d_read_np: (n) => { const c = document.createElement('canvas'); c.width = 256; c.height = 256; const x = c.getContext('2d'); canvasOpsNp(x, n); sink = x.getImageData(0, 0, 256, 256); },
     sort_builtin: (n) => { for (let i = 0; i < n; i++) sink = arr.slice().sort((a, b) => a - b); },
   };
   if (plant && W[plant]) { const f = W[plant]; W[plant] = (n) => { f(n); f(n); }; }   // test-only slowdown: twice the work
