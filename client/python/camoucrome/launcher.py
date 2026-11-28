@@ -363,7 +363,7 @@ def launch(playwright, executable_path, *, config=None, preset=None,
         perms = list(options.get("permissions") or [])
         options["permissions"] = perms + ["geolocation"] * ("geolocation" not in perms)
     atrest.sweep(keep=user_data_dir)  # a killed client's leftovers; never the caller's profile
-    owned = [atrest.mkdtemp("crash-")]
+    owned = [atrest.mkdtemp(atrest.CRASH_KIND)]
     if user_data_dir is None:
         user_data_dir = atrest.mkdtemp()
         owned.append(user_data_dir)

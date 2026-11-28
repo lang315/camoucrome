@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
+	"time"
 )
 
 //go:embed data/launcher.json
@@ -27,6 +29,11 @@ var contract struct {
 		CrashDumps struct {
 			Env string `json:"env"`
 		} `json:"crash_dumps"`
+		TempDirs struct {
+			Prefix     string `json:"prefix"`
+			CrashKind  string `json:"crash_kind"`
+			StaleAfter int    `json:"stale_after_seconds"`
+		} `json:"temp_dirs"`
 		Fontconfig struct {
 			Env   string            `json:"env"`
 			Files map[string]string `json:"files"`
@@ -44,6 +51,12 @@ func init() {
 	if err := json.Unmarshal(launcherJSON, &contract); err != nil {
 		panic("core: embedded launcher.json: " + err.Error())
 	}
+	td := contract.Launch.TempDirs
+	if td.Prefix == "" || td.CrashKind == "" || td.StaleAfter <= 0 {
+		panic("core: embedded launcher.json: no launch.temp_dirs") // an empty prefix would sweep foreign dirs
+	}
+	ownedName = regexp.MustCompile(`^` + regexp.QuoteMeta(td.Prefix) + `(?:` + regexp.QuoteMeta(td.CrashKind) + `)?([0-9]+)-[^/\\]+$`)
+	staleAfter = time.Duration(td.StaleAfter) * time.Second
 }
 
 // osInfoMarkers mirrors derive.cc kForms: (ua:osInfo marker, UA-CH platform)
@@ -134,7 +147,7 @@ func envFor(r Resolved, o LaunchOpts, base []string, host string) ([]string, fun
 	}
 	sweep(o.UserDataDir) // a killed client's leftovers; never the caller's profile
 	// Named for this process so sweep() can tell a live client's dir; 0700.
-	crash, err := os.MkdirTemp("", fmt.Sprintf("camoucrome-crash-%d-", os.Getpid()))
+	crash, err := os.MkdirTemp("", fmt.Sprintf("%s%s%d-", contract.Launch.TempDirs.Prefix, contract.Launch.TempDirs.CrashKind, os.Getpid()))
 	if err != nil {
 		return nil, noop, err
 	}

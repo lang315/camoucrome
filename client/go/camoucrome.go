@@ -550,7 +550,7 @@ func launch(bt persistentLauncher, o Options) (playwright.BrowserContext, error)
 		return nil, err
 	}
 	Sweep(o.UserDataDir) // a killed client's leftovers; never the caller's profile
-	crash, err := MkdirTemp("crash-")
+	crash, err := MkdirTemp(crashKind)
 	if err != nil {
 		return nil, err
 	}

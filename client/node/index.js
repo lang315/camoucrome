@@ -346,7 +346,7 @@ async function launch(chromium, executablePath, {
   // writing its profile (measured 2026-10-03 with the Python client: one pass
   // left 3-193 files, a retry ~0.07 s later removed them). ~10 s at most.
   atrest.sweep(userDataDir); // a killed client's leftovers; never the caller's profile
-  const owned = [atrest.mkdtemp('crash-')];
+  const owned = [atrest.mkdtemp(atrest.CRASH_KIND)];
   const dir = userDataDir || atrest.mkdtemp();
   if (!userDataDir) owned.push(dir);
   let env = {}; // the launch env, kept for redacting the browser stderr out of a launch error
